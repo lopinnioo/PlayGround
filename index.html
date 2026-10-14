@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ashen Vigil — A One-Boss Souls-Like</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>⚔</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;800&family=EB+Garamond:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <div id="player-plate">
+    <div class="bar-label">ASHEN ONE</div>
+    <div id="hp-wrap" class="bar-wrap"><div id="hp-fill"></div><div id="hp-ghost"></div></div>
+    <div id="st-wrap" class="bar-wrap"><div id="st-fill"></div></div>
+    <div id="flasks"></div>
+    <div id="weapon-label">» Knight's Longsword</div>
+  </div>
+  <div id="souls-counter"><span id="souls-ico">◈</span> <span id="souls-num">0</span> souls</div>
+  <div id="boss-plate" class="hidden">
+    <div id="boss-name">SER DUNCAN &nbsp;·&nbsp; THE ASHEN KNIGHT</div>
+    <div id="boss-wrap"><div id="boss-fill"></div><div id="boss-ghost"></div></div>
+  </div>
+  <div id="lock-hint" class="hidden">— LOCKED ON —</div>
+  <div id="interact-prompt" class="hidden">Press <b>E</b> <span id="interact-text"></span></div>
+  <div id="boss-telegraph" class="hidden">⚠</div>
+</div>
+
+<div id="controls-hint">
+  <b>WASD</b> move · <b>Mouse</b> camera · <b>LMB</b> attack · <b>RMB/F</b> heavy · <b>Space</b> dodge-roll ·
+  <b>E</b> interact · <b>R</b> estus · <b>Q</b> lock-on · <b>Shift</b> sprint · <b>M</b> mute
+</div>
+
+<div id="vignette"></div>
+<div id="damage-flash"></div>
+
+<!-- Title screen -->
+<div id="title-screen">
+  <div class="title-inner">
+    <div class="subtitle">A ONE-BOSS SOULS-LIKE</div>
+    <h1>ASHEN<br>VIGIL</h1>
+    <div class="rule">⚔ ───── ◈ ───── ⚔</div>
+    <p class="lore">The fog has taken the keep. Only <b>Ser Duncan</b> remains on vigil —<br>
+    a knight grown weary, honourable, and <i>merciful to beginners</i>.<br>
+    Learn his swings. Roll through them. Sip your estus. End his watch.</p>
+    <div class="diff-tag">DIFFICULTY: MERCIFUL · one boss · ~3 minutes · desktop keyboard + mouse</div>
+    <button id="btn-begin">☩ &nbsp;STEP THROUGH THE FOG&nbsp; ☩</button>
+    <div class="controls-grid">
+      <div><b>WASD</b><span>move</span></div>
+      <div><b>MOUSE</b><span>camera (click to lock)</span></div>
+      <div><b>LMB</b><span>light attack ×3 combo</span></div>
+      <div><b>RMB / F</b><span>heavy attack</span></div>
+      <div><b>SPACE</b><span>dodge-roll (i-frames)</span></div>
+      <div><b>R</b><span>drink estus (3 flasks)</span></div>
+      <div><b>Q</b><span>lock-on boss</span></div>
+      <div><b>E</b><span>rest / enter arena</span></div>
+    </div>
+    <div class="tip">Tip: his overhead slam glows gold — roll <i>into</i> it, not away. Hit him ~10 times. You can do this.</div>
+  </div>
+</div>
+
+<!-- Center messages -->
+<div id="center-msg" class="hidden"></div>
+<div id="sub-msg" class="hidden"></div>
+
+<!-- Death / victory -->
+<!-- Inventory / equipment -->
+<div id="inventory" class="hidden">
+  <div class="inv-panel">
+    <div class="inv-head"><h2>EQUIPMENT</h2><span class="inv-hint">TAB / ESC to close · 1-8 quick-equip</span></div>
+    <div id="inv-stats" class="inv-stats"></div>
+    <div class="inv-slots">
+      <div class="inv-slot"><span class="slot-k">RIGHT HAND</span><span id="slot-weapon" class="slot-v"></span></div>
+      <div class="inv-slot"><span class="slot-k">LEFT HAND</span><span class="slot-v">Knight's Shield</span></div>
+      <div class="inv-slot"><span class="slot-k">SPOILS</span><span id="spoils-slot" class="slot-v"></span></div>
+    </div>
+    <h3>ARMORY</h3>
+    <div id="weapon-list"></div>
+    <h3>SPOILS</h3>
+    <div id="spoils-list"></div>
+    <div class="inv-foot">Find more weapons in the world — they glow gold. Weight slows your swings and stride.</div>
+  </div>
+</div>
+
+<!-- Spoils of war (boss drops) -->
+<div id="drop-screen" class="hidden">
+  <div class="drop-panel">
+    <div class="subtitle gold">SPOILS OF WAR</div>
+    <h2>SER DUNCAN HAS FALLEN</h2>
+    <div id="drop-list"></div>
+    <button id="btn-claim">CLAIM SPOILS&nbsp; (E)</button>
+  </div>
+</div>
+
+<div id="death-screen" class="hidden"><div class="big-red">YOU DIED</div></div>
+<div id="victory-screen" class="hidden">
+  <div class="victory-inner">
+    <div class="subtitle gold">GREAT ENEMY FELLED</div>
+    <h2>THE VIGIL ENDS</h2>
+    <p id="victory-stats"></p>
+    <button id="btn-again">↻ &nbsp;FACE HIM AGAIN&nbsp; ↻</button>
+    <div class="tip">New Game+ : he hits 25% harder each victory. How high can you go?</div>
+  </div>
+</div>
+
+<div id="loading">kindling the bonfire…</div>
+<div id="mute-badge" class="hidden">MUTED (M)</div>
+
+<script type="module" src="game.js"></script>
+</body>
+</html>
