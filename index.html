@@ -3,13 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ashen Vigil — A One-Boss Souls-Like</title>
+<title>Souls Boss Demo</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>⚔</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;800&family=EB+Garamond:ital@0;1&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <script type="importmap">
-{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
 </script>
 </head>
 <body>
@@ -24,7 +27,6 @@
     <div id="flasks"></div>
     <div id="weapon-label">» Knight's Longsword</div>
   </div>
-  <div id="souls-counter"><span id="souls-ico">◈</span> <span id="souls-num">0</span> souls</div>
   <div id="boss-plate" class="hidden">
     <div id="boss-name">SER DUNCAN &nbsp;·&nbsp; THE ASHEN KNIGHT</div>
     <div id="boss-wrap"><div id="boss-fill"></div><div id="boss-ghost"></div></div>
@@ -45,13 +47,7 @@
 <!-- Title screen -->
 <div id="title-screen">
   <div class="title-inner">
-    <div class="subtitle">A ONE-BOSS SOULS-LIKE</div>
-    <h1>ASHEN<br>VIGIL</h1>
-    <div class="rule">⚔ ───── ◈ ───── ⚔</div>
-    <p class="lore">The fog has taken the keep. Only <b>Ser Duncan</b> remains on vigil —<br>
-    a knight grown weary, honourable, and <i>merciful to beginners</i>.<br>
-    Learn his swings. Roll through them. Sip your estus. End his watch.</p>
-    <div class="diff-tag">DIFFICULTY: MERCIFUL · one boss · ~3 minutes · desktop keyboard + mouse</div>
+    <h1>SOULS BOSS<br>DEMO</h1>
     <button id="btn-begin">☩ &nbsp;STEP THROUGH THE FOG&nbsp; ☩</button>
     <div class="controls-grid">
       <div><b>WASD</b><span>move</span></div>
@@ -59,11 +55,10 @@
       <div><b>LMB</b><span>light attack ×3 combo</span></div>
       <div><b>RMB / F</b><span>heavy attack</span></div>
       <div><b>SPACE</b><span>dodge-roll (i-frames)</span></div>
-      <div><b>R</b><span>drink estus (3 flasks)</span></div>
+      <div><b>R</b><span>drink estus (2 flasks)</span></div>
       <div><b>Q</b><span>lock-on boss</span></div>
       <div><b>E</b><span>rest / enter arena</span></div>
     </div>
-    <div class="tip">Tip: his overhead slam glows gold — roll <i>into</i> it, not away. Hit him ~10 times. You can do this.</div>
   </div>
 </div>
 
@@ -86,7 +81,9 @@
     <div id="weapon-list"></div>
     <h3>SPOILS</h3>
     <div id="spoils-list"></div>
-    <div class="inv-foot">Find more weapons in the world — they glow gold. Weight slows your swings and stride.</div>
+    <div class="inv-foot">Find more weapons in the world — they glow gold. Weight slows your swings and stride.
+      <div class="save-row"><span id="save-note">PROGRESS AUTO-SAVES IN THIS BROWSER</span><button id="btn-erase" type="button">ERASE SAVE</button></div>
+    </div>
   </div>
 </div>
 

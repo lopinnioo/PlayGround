@@ -100,6 +100,10 @@ html,body{width:100%;height:100%;overflow:hidden;background:#060608;font-family:
 .wstate{font-family:Cinzel,serif;font-size:9.5px;letter-spacing:1px;color:#8a7a5a;text-align:right}
 .wrow.equipped .wstate{color:#ffd76e}
 .inv-foot{margin-top:14px;font-size:12px;font-style:italic;color:#6b5c3e}
+.save-row{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:12px;padding-top:10px;border-top:1px solid rgba(201,162,39,.14);font-style:normal;font-family:Cinzel,serif;font-size:9.5px;letter-spacing:1px;color:#8a7a5a}
+#save-note.saved{color:#ffd76e}
+#btn-erase{background:none;border:1px solid #4a3d28;color:#8a7a5a;font:inherit;font-size:9px;letter-spacing:1px;padding:4px 9px;cursor:pointer;transition:.15s;white-space:nowrap}
+#btn-erase:hover{border-color:#a34b3a;color:#e08b78}
 .spoil{font-size:13px;padding:3px 8px;margin:2px 0;border-left:3px solid;background:rgba(255,255,255,.03);cursor:pointer;transition:.15s}
 .spoil:hover{background:rgba(200,160,80,.08)}
 .spoil.rarity-common{border-color:#b8bfc9;color:#b8bfc9}
