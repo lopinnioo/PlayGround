@@ -38,17 +38,19 @@
 
 <div id="controls-hint">
   <b>WASD</b> move · <b>Mouse</b> camera · <b>LMB</b> attack · <b>RMB/F</b> heavy · <b>Space</b> dodge-roll ·
-  <b>E</b> interact · <b>R</b> estus · <b>Q</b> lock-on · <b>Shift</b> sprint · <b>M</b> mute
+  <b>E</b> interact · <b>R</b> estus · <b>T</b> travel · <b>AUTO</b> boss lock-on · <b>Shift</b> sprint · <b>M</b> mute
 </div>
 
 <div id="vignette"></div>
 <div id="damage-flash"></div>
+<div id="world-fade"></div>
 
 <!-- Title screen -->
 <div id="title-screen">
   <div class="title-inner">
     <h1>SOULS BOSS<br>DEMO</h1>
-    <button id="btn-begin">☩ &nbsp;STEP THROUGH THE FOG&nbsp; ☩</button>
+    <div class="subtitle gold">CHOOSE YOUR VIGIL</div>
+    <div id="boss-select" class="boss-select"></div>
     <div class="controls-grid">
       <div><b>WASD</b><span>move</span></div>
       <div><b>MOUSE</b><span>camera (click to lock)</span></div>
@@ -56,8 +58,9 @@
       <div><b>RMB / F</b><span>heavy attack</span></div>
       <div><b>SPACE</b><span>dodge-roll (i-frames)</span></div>
       <div><b>R</b><span>drink estus (2 flasks)</span></div>
-      <div><b>Q</b><span>lock-on boss</span></div>
+      <div><b>AUTO</b><span>lock-on always tracks the boss</span></div>
       <div><b>E</b><span>rest / enter arena</span></div>
+      <div><b>T</b><span>travel between worlds</span></div>
     </div>
   </div>
 </div>
@@ -87,11 +90,22 @@
   </div>
 </div>
 
+<!-- Crossroads / boss travel (unlocked after first victory) -->
+<div id="vigil-menu" class="hidden">
+  <div class="vigil-panel">
+    <div class="subtitle gold">THE CROSSROADS</div>
+    <h2>CHOOSE YOUR VIGIL</h2>
+    <p id="vigil-note">Two worlds answer your call. The fog remembers every victory.</p>
+    <div id="vigil-boss-list" class="victory-boss-list vigil-boss-list"></div>
+    <div class="vigil-foot">T / ESC to close · travelling away from an active duel abandons it</div>
+  </div>
+</div>
+
 <!-- Spoils of war (boss drops) -->
 <div id="drop-screen" class="hidden">
   <div class="drop-panel">
     <div class="subtitle gold">SPOILS OF WAR</div>
-    <h2>SER DUNCAN HAS FALLEN</h2>
+    <h2 id="drop-title">SER DUNCAN HAS FALLEN</h2>
     <div id="drop-list"></div>
     <button id="btn-claim">CLAIM SPOILS&nbsp; (E)</button>
   </div>
@@ -101,10 +115,14 @@
 <div id="victory-screen" class="hidden">
   <div class="victory-inner">
     <div class="subtitle gold">GREAT ENEMY FELLED</div>
-    <h2>THE VIGIL ENDS</h2>
+    <h2 id="victory-title">THE VIGIL ENDS</h2>
     <p id="victory-stats"></p>
     <button id="btn-again">↻ &nbsp;FACE HIM AGAIN&nbsp; ↻</button>
-    <div class="tip">New Game+ : he hits 25% harder each victory. How high can you go?</div>
+    <div class="victory-switch">
+      <div class="vs-label">CHOOSE YOUR NEXT VIGIL</div>
+      <div id="victory-boss-list" class="victory-boss-list"></div>
+    </div>
+    <div class="tip" id="victory-tip">New Game+ : he hits 25% harder each victory. How high can you go?</div>
   </div>
 </div>
 

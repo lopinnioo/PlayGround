@@ -20,6 +20,8 @@ const vignette = $('vignette'), damageFlash = $('damage-flash'), lockHint = $('l
 const telegraphEl = $('boss-telegraph'), muteBadge = $('mute-badge');
 const inventoryEl = $('inventory'), weaponListEl = $('weapon-list'), slotWeaponEl = $('slot-weapon'), invStatsEl = $('inv-stats'), weaponLabelEl = $('weapon-label');
 const dropScreenEl = $('drop-screen'), dropListEl = $('drop-list'), spoilsSlotEl = $('spoils-slot');
+const vigilMenuEl = $('vigil-menu'), vigilBossListEl = $('vigil-boss-list');
+const worldFade = $('world-fade');
 
 // ============ TUNING (vicious) ============
 const TUNE = {
@@ -28,6 +30,7 @@ const TUNE = {
   rollST: 24, sprintDrain: 18, stRegen: 46, rollTime: 0.46, iframes: [0.06, 0.30],
   bossHP: 1450, bossDmg: { slash: 42, slash2: 46, slam: 64, ring: 38, thrust: 50, jump: 60, bash: 26, pillar: 48 },
   bossSpeed: 3.7, bossRun: 6.3, bossTurn: 3.2, recovery: 1.12,
+  witchHP: 1320, witchDmg: { bolt: 34, wave: 42, curse: 52, blink: 46, storm: 30 }, witchSpeed: 3.2,
 };
 
 // ============ AUDIO (procedural, no files) ============
@@ -258,8 +261,9 @@ const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 26
 addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
 
 // dusk sky with drifting cloud banks, low moon and warm horizon haze
+let skyMat;
 {
-  const skyMat = new THREE.ShaderMaterial({
+  skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
     uniforms: {
       uZenith: { value: new THREE.Color(0x0a1117).convertSRGBToLinear() },
@@ -305,7 +309,8 @@ addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; cam
   sky.renderOrder = -10; scene.add(sky);
 }
 
-scene.add(new THREE.HemisphereLight(0x7b95aa, 0x1b2016, 0.62));
+const hemiLight = new THREE.HemisphereLight(0x7b95aa, 0x1b2016, 0.62);
+scene.add(hemiLight);
 const moon = new THREE.DirectionalLight(0xc9dbff, 1.25);
 moon.position.set(-26, 40, -18); moon.castShadow = false;
 moon.shadow.mapSize.set(2048, 2048);
@@ -320,24 +325,82 @@ const rim = new THREE.DirectionalLight(0x8bacff, 1.05); rim.position.set(8, 14, 
 const backlight = new THREE.DirectionalLight(0xa8c8e8, 1.45); backlight.position.set(-4, 10, 48); scene.add(backlight);
 const arenaLight = new THREE.PointLight(0xffa15c, 55, 42, 1.7); arenaLight.position.set(0, 7, 0); scene.add(arenaLight);
 
-// procedural environment map so metal armour reflects a sky instead of going black
+// procedural environment maps so metal armour reflects the world sky instead of going black
+let envDuncan = null, envWitch = null;
 {
-  const c = document.createElement('canvas'); c.width = 512; c.height = 256;
-  const x = c.getContext('2d');
-  const grd = x.createLinearGradient(0, 0, 0, 256);
-  grd.addColorStop(0, '#58666e'); grd.addColorStop(0.42, '#9dadae');
-  grd.addColorStop(0.52, '#c6cec0'); grd.addColorStop(0.56, '#5e6a42');
-  grd.addColorStop(1, '#262c1c');
-  x.fillStyle = grd; x.fillRect(0, 0, 512, 256);
-  const fg = x.createLinearGradient(0, 108, 0, 160);
-  fg.addColorStop(0, 'rgba(255,120,40,0)'); fg.addColorStop(0.5, 'rgba(255,150,60,0.5)'); fg.addColorStop(1, 'rgba(255,120,40,0)');
-  x.fillStyle = fg; x.fillRect(0, 108, 512, 52);
-  const tex = new THREE.CanvasTexture(c);
-  tex.mapping = THREE.EquirectangularReflectionMapping; tex.colorSpace = THREE.SRGBColorSpace;
   const pmrem = new THREE.PMREMGenerator(renderer); pmrem.compileEquirectangularShader();
-  const rt = pmrem.fromEquirectangular(tex);
-  scene.environment = rt.texture;
-  tex.dispose(); pmrem.dispose();
+  const makeEnv = (stops, glow) => {
+    const c = document.createElement('canvas'); c.width = 512; c.height = 256;
+    const x = c.getContext('2d');
+    const grd = x.createLinearGradient(0, 0, 0, 256);
+    for (const [at, col] of stops) grd.addColorStop(at, col);
+    x.fillStyle = grd; x.fillRect(0, 0, 512, 256);
+    const fg = x.createLinearGradient(0, 108, 0, 160);
+    fg.addColorStop(0, 'rgba(0,0,0,0)'); fg.addColorStop(0.5, glow); fg.addColorStop(1, 'rgba(0,0,0,0)');
+    x.fillStyle = fg; x.fillRect(0, 108, 512, 52);
+    const tex = new THREE.CanvasTexture(c);
+    tex.mapping = THREE.EquirectangularReflectionMapping; tex.colorSpace = THREE.SRGBColorSpace;
+    const rt = pmrem.fromEquirectangular(tex);
+    tex.dispose();
+    return rt.texture;
+  };
+  envDuncan = makeEnv([[0, '#58666e'], [0.42, '#9dadae'], [0.52, '#c6cec0'], [0.56, '#5e6a42'], [1, '#262c1c']], 'rgba(255,150,60,0.5)');
+  envWitch = makeEnv([[0, '#120a30'], [0.38, '#2a1e66'], [0.52, '#4a2a7a'], [0.58, '#3a1028'], [1, '#08040f']], 'rgba(190,40,90,0.5)');
+  scene.environment = envDuncan;
+  pmrem.dispose();
+}
+
+// ============ WORLD MOODS (Duncan's ashen ring vs Morgana's nightshade hollow) ============
+const WORLD_STYLES = {
+  duncan: {
+    bg: 0x202a2c, fog: 0x3d4844, fogDensity: 0.0112, env: () => envDuncan,
+    sky: { zenith: 0x0a1117, mid: 0x2b383c, horizon: 0x746d5b, glow: 0xe0924e },
+    hemi: { sky: 0x7b95aa, ground: 0x1b2016, intensity: 0.62 },
+    moon: { color: 0xc9dbff, intensity: 1.25 },
+    fill: { color: 0xc9d2a8, intensity: 0.48 },
+    rim: { color: 0x8bacff, intensity: 1.05 },
+    backlight: { color: 0xa8c8e8, intensity: 1.45 },
+    arena: { color: 0xffa15c, intensity: 55 },
+  },
+  witch: {
+    bg: 0x080410, fog: 0x1b0e33, fogDensity: 0.042, env: () => envWitch,
+    sky: { zenith: 0x03020a, mid: 0x150b33, horizon: 0x3c1a5c, glow: 0x9c2450 },
+    hemi: { sky: 0x6f63ff, ground: 0x150a20, intensity: 0.62 },
+    moon: { color: 0xb9a6ff, intensity: 1.0 },
+    fill: { color: 0x6a7cff, intensity: 0.45 },
+    rim: { color: 0xa64dff, intensity: 1.8 },
+    backlight: { color: 0x5a3cff, intensity: 1.15 },
+    arena: { color: 0x9b5cff, intensity: 0 },
+  },
+};
+function applyWorldStyle(id) {
+  const s = WORLD_STYLES[id] || WORLD_STYLES.duncan;
+  scene.background = new THREE.Color(s.bg);
+  scene.fog = new THREE.FogExp2(s.fog, s.fogDensity);
+  scene.environment = s.env();
+  if (skyMat) {
+    skyMat.uniforms.uZenith.value.setHex(s.sky.zenith).convertSRGBToLinear();
+    skyMat.uniforms.uMid.value.setHex(s.sky.mid).convertSRGBToLinear();
+    skyMat.uniforms.uHorizon.value.setHex(s.sky.horizon).convertSRGBToLinear();
+    skyMat.uniforms.uGlow.value.setHex(s.sky.glow).convertSRGBToLinear();
+  }
+  hemiLight.color.setHex(s.hemi.sky); hemiLight.groundColor.setHex(s.hemi.ground);
+  hemiLight.intensity = s.hemi.intensity;
+  moon.color.setHex(s.moon.color); moon.intensity = s.moon.intensity;
+  fill.color.setHex(s.fill.color); fill.intensity = s.fill.intensity;
+  rim.color.setHex(s.rim.color); rim.intensity = s.rim.intensity;
+  backlight.color.setHex(s.backlight.color); backlight.intensity = s.backlight.intensity;
+  arenaLight.color.setHex(s.arena.color); arenaLight.intensity = s.arena.intensity;
+  warm.intensity = id === 'witch' ? 0 : 30;
+}
+function flashWorldSwap() {
+  if (!worldFade) return;
+  worldFade.style.transition = 'none';
+  worldFade.style.opacity = '1';
+  requestAnimationFrame(() => {
+    worldFade.style.transition = 'opacity .5s';
+    worldFade.style.opacity = '0';
+  });
 }
 
 // ============ POST-PROCESSING (bloom + filmic grade + vignette/grain) ============
@@ -529,6 +592,8 @@ const smokeTex = canvasTex(128, (x, s) => {
 
 // ============ MEADOW ARENA (grass plain, ring of fire = invisible barrier) ============
 const ARENA_R = 16;
+const WITCH_R = 16;
+const WITCH_CENTER = new THREE.Vector3(0, 0, -82);
 const grassTex = canvasTex(512, (x, s) => {
   x.fillStyle = '#4c5733'; x.fillRect(0, 0, s, s);
   // broad damp/dry patches break up the tiling
@@ -590,6 +655,8 @@ const fireGlowTex = canvasTex(128, (x, s) => {
   g.addColorStop(0.6, 'rgba(255,90,20,0.35)'); g.addColorStop(1, 'rgba(255,50,0,0)');
   x.fillStyle = g; x.fillRect(0, 0, s, s);
 });
+fireGlowTex.generateMipmaps = false;
+fireGlowTex.minFilter = THREE.LinearFilter;
 
 const mistTex = canvasTex(128, (x, s) => {
   const g = x.createRadialGradient(s / 2, s / 2, 4, s / 2, s / 2, s / 2);
@@ -950,6 +1017,324 @@ function resetAltar() {
   altarLight.intensity = 14;
   altarRuneMat.emissiveIntensity = 1.6;
 }
+
+// ============ THE NIGHTSHADE HOLLOW (witch arena) ============
+const witchStonePos = new THREE.Vector3(WITCH_CENTER.x, 0, WITCH_CENTER.z - 10.5);
+let witchCrystal, witchCrystalMat, witchCrystalGlow, witchLight;
+const witchFlames = [];
+const hexFlameOuterMat = new THREE.SpriteMaterial({
+  map: flameTex, color: 0x9b5cff, transparent: true, opacity: 0.58,
+  blending: THREE.AdditiveBlending, depthWrite: false, fog: true,
+});
+const hexFlameCoreMat = new THREE.SpriteMaterial({
+  map: flameTex, color: 0xe6d2ff, transparent: true, opacity: 0.82,
+  blending: THREE.AdditiveBlending, depthWrite: false, fog: true,
+});
+const hexEmberMat = new THREE.SpriteMaterial({ map: fireGlowTex, color: 0x8f5cff, transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false, fog: true });
+const witchArenaGroup = new THREE.Group();
+witchArenaGroup.name = 'witch-arena';
+scene.add(witchArenaGroup);
+function hexFlameAt(x, z, h, r, withGlow = false) {
+  const grp = new THREE.Group(); grp.position.set(x, 0, z);
+  const seed = Math.random() * 100;
+  const outer = new THREE.Sprite(hexFlameOuterMat);
+  outer.scale.set(r * 2.9, h * 1.5, 1); outer.position.y = h * 0.62; grp.add(outer);
+  const core = new THREE.Sprite(hexFlameCoreMat);
+  core.scale.set(r * 1.35, h * 0.95, 1); core.position.y = h * 0.50; grp.add(core);
+  const sprites = [outer, core];
+  if (withGlow) {
+    const glow = new THREE.Sprite(hexEmberMat);
+    glow.scale.setScalar(r * 7.5); glow.position.y = h * 0.22; grp.add(glow); sprites.push(glow);
+  }
+  grp.userData = { sprites, w: r, h, seed };
+  witchFlames.push(grp);
+  witchArenaGroup.add(grp);
+  return grp;
+}
+{
+  const C = WITCH_CENTER;
+  const witchGroundMat = new THREE.MeshStandardMaterial({
+    map: dirtTex, color: 0x4a3a5e, roughness: 1, transparent: true, opacity: 0.9,
+    alphaMap: arenaFadeTex, depthWrite: false,
+    normalMap: groundNormalTex, normalScale: new THREE.Vector2(0.8, 0.8),
+  });
+  const witchTrampled = new THREE.Mesh(new THREE.CircleGeometry(WITCH_R + 1.6, 72), witchGroundMat);
+  witchTrampled.rotation.x = -Math.PI / 2; witchTrampled.position.set(C.x, 0.007, C.z); witchTrampled.receiveShadow = true; witchArenaGroup.add(witchTrampled);
+
+  const witchScorch = new THREE.Mesh(new THREE.RingGeometry(WITCH_R - 1.3, WITCH_R + 1.7, 96),
+    new THREE.MeshStandardMaterial({ color: 0x140d20, roughness: 1, transparent: true, opacity: 0.55, depthWrite: false }));
+  witchScorch.rotation.x = -Math.PI / 2; witchScorch.position.set(C.x, 0.013, C.z); witchArenaGroup.add(witchScorch);
+
+  const runeMat = new THREE.MeshBasicMaterial({ color: 0x9b5cff, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  for (const [rad, wdt, op] of [[3.15, 0.055, 0.55], [4.4, 0.035, 0.4], [7.8, 0.05, 0.3], [12.2, 0.04, 0.24]]) {
+    const ring = new THREE.Mesh(new THREE.RingGeometry(rad - wdt, rad + wdt, 72), runeMat.clone());
+    ring.material.opacity = op; ring.rotation.x = -Math.PI / 2; ring.position.set(C.x, 0.02, C.z); witchArenaGroup.add(ring);
+  }
+  for (let i = 0; i < 28; i++) {
+    const a = i / 28 * Math.PI * 2;
+    const rune = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.5 + Math.random() * 0.45), runeMat);
+    rune.position.set(C.x + Math.cos(a) * (4.4 + Math.random() * 0.7), 0.021, C.z + Math.sin(a) * (4.4 + Math.random() * 0.7));
+    rune.rotation.set(-Math.PI / 2, 0, -a + Math.PI / 2 + (Math.random() - 0.5) * 0.3); witchArenaGroup.add(rune);
+  }
+
+  // black stone dais and the suspended heart-crystal
+  const daisStone = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x413550, roughness: 0.92, metalness: 0.08, normalMap: groundNormalTex, normalScale: new THREE.Vector2(0.8, 0.8) });
+  const daisDark = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x1d1626, roughness: 0.85, metalness: 0.12, normalMap: groundNormalTex });
+  const DS = witchStonePos;
+  const dais = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.75, 0.34, 8), daisDark);
+  dais.position.set(DS.x, 0.17, DS.z); dais.castShadow = dais.receiveShadow = true; witchArenaGroup.add(dais);
+  const daisTop = new THREE.Mesh(new THREE.CylinderGeometry(1.18, 1.32, 0.16, 8), daisStone);
+  daisTop.position.set(DS.x, 0.4, DS.z); daisTop.castShadow = true; witchArenaGroup.add(daisTop);
+  for (let i = 0; i < 8; i++) {
+    const a = i / 8 * Math.PI * 2 + 0.2;
+    const shard = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.9 + Math.random() * 0.7, 5), daisStone);
+    shard.position.set(DS.x + Math.cos(a) * 1.32, 0.6, DS.z + Math.sin(a) * 1.32);
+    shard.rotation.z = (Math.random() - 0.5) * 0.25; shard.castShadow = true; witchArenaGroup.add(shard);
+  }
+  witchCrystalMat = new THREE.MeshStandardMaterial({ color: 0xd9b7ff, emissive: 0x7b3aff, emissiveIntensity: 2.6, metalness: 0.25, roughness: 0.15 });
+  witchCrystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.48, 0), witchCrystalMat);
+  witchCrystal.scale.set(0.8, 1.75, 0.8); witchCrystal.position.set(DS.x, 2.35, DS.z); witchArenaGroup.add(witchCrystal);
+  const crystalRing = new THREE.Mesh(new THREE.TorusGeometry(0.85, 0.035, 8, 40), runeMat.clone());
+  crystalRing.material.opacity = 0.6; crystalRing.position.set(DS.x, 2.35, DS.z); witchArenaGroup.add(crystalRing);
+  witchCrystalGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: fireGlowTex, color: 0x9b5cff, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, fog: true }));
+  witchCrystalGlow.scale.setScalar(4.4); witchCrystalGlow.position.set(DS.x, 2.35, DS.z); witchArenaGroup.add(witchCrystalGlow);
+  witchLight = new THREE.PointLight(0x9b5cff, 46, 52, 1.7); witchLight.position.set(C.x, 7.5, C.z); witchArenaGroup.add(witchLight);
+
+  // witchfire boundary
+  for (let i = 0; i < 64; i++) {
+    const a = i / 64 * Math.PI * 2;
+    let d = a - GATE_ANGLE; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
+    if (Math.abs(d) < 0.2) continue;
+    const rr = WITCH_R + 0.15 + (Math.random() - 0.5) * 1.2;
+    hexFlameAt(C.x + Math.cos(a) * rr, C.z + Math.sin(a) * rr, 1.0 + Math.random() * 2.2, 0.3 + Math.random() * 0.42);
+  }
+  const hexBand = new THREE.Mesh(new THREE.TorusGeometry(WITCH_R + 0.25, 0.35, 8, 96),
+    new THREE.MeshBasicMaterial({ color: 0x8f5cff, transparent: true, opacity: 0.1, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+  hexBand.rotation.x = Math.PI / 2; hexBand.position.set(C.x, 0.3, C.z); witchArenaGroup.add(hexBand);
+  const hexHalo = new THREE.Mesh(new THREE.PlaneGeometry(84, 84), new THREE.MeshBasicMaterial({
+    map: fireHaloTex, color: 0x9b5cff, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending,
+    depthWrite: false, fog: false,
+  }));
+  hexHalo.rotation.x = -Math.PI / 2; hexHalo.position.set(C.x, 0.022, C.z); hexHalo.renderOrder = 2; witchArenaGroup.add(hexHalo);
+
+  // rune-carved obelisks and candles encircling the hollow
+  const obeliskMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x3a3048, roughness: 0.95, normalMap: groundNormalTex, normalScale: new THREE.Vector2(0.9, 0.9) });
+  for (let i = 0; i < 11; i++) {
+    const a = i / 11 * Math.PI * 2 + 0.18;
+    if (Math.abs(angDiff(a, GATE_ANGLE)) < 0.3) continue;
+    const h = 2.8 + Math.random() * 3.2, rad = 0.34 + Math.random() * 0.36;
+    const ob = new THREE.Mesh(new THREE.CylinderGeometry(rad * 0.68, rad, h, 6, 3), obeliskMat);
+    const rr = 20.5 + Math.random() * 5.5;
+    ob.position.set(C.x + Math.cos(a) * rr, h / 2 - 0.12, C.z + Math.sin(a) * rr);
+    ob.rotation.set((Math.random() - 0.5) * 0.1, Math.random() * Math.PI, (Math.random() - 0.5) * 0.12);
+    ob.castShadow = ob.receiveShadow = true; witchArenaGroup.add(ob);
+    const glyph = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.75), runeMat.clone());
+    glyph.material.opacity = 0.4; glyph.position.set(ob.position.x, 1.1, ob.position.z + 0.02);
+    glyph.rotation.y = -a + Math.PI / 2; witchArenaGroup.add(glyph);
+  }
+  for (let i = 0; i < 7; i++) {
+    const a = i / 7 * Math.PI * 2 + 0.5, rr = 10.5 + Math.random() * 1.6;
+    const x = C.x + Math.cos(a) * rr, z = C.z + Math.sin(a) * rr;
+    const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.22, 0.34, 8), daisDark);
+    bowl.position.set(x, 0.17, z); bowl.castShadow = true; witchArenaGroup.add(bowl);
+    hexFlameAt(x, z, 0.72 + Math.random() * 0.3, 0.16 + Math.random() * 0.08, true);
+  }
+
+  // the veil gate on the southern edge
+  const veil = new THREE.Mesh(new THREE.PlaneGeometry(5.2, 4.4),
+    new THREE.MeshBasicMaterial({ map: mistTex, color: 0xb08cff, transparent: true, opacity: 0.42, side: THREE.DoubleSide, depthWrite: false }));
+  veil.position.set(C.x, 2.2, C.z + WITCH_R - 3.4); witchArenaGroup.add(veil);
+
+  witchArenaGroup.add(groundBlob(C.x, C.z, 4.4, 0.42));
+}
+
+witchArenaGroup.visible = false;
+
+// ============ THE NIGHTSHADE HOLLOW — A WORLD UNTO ITSELF ============
+// Morgana's arena is wrapped in its own violet forest so the ashen ring is nowhere in sight.
+const witchWorldGroup = new THREE.Group();
+witchWorldGroup.name = 'witch-world';
+scene.add(witchWorldGroup);
+const witchMotes = [];
+{
+  const C = WITCH_CENTER;
+  const witchGroundTex = canvasTex(512, (x, s) => {
+    x.fillStyle = '#241640'; x.fillRect(0, 0, s, s);
+    for (let i = 0; i < 150; i++) {
+      const g = x.createRadialGradient(Math.random() * s, Math.random() * s, 2, Math.random() * s, Math.random() * s, 24 + Math.random() * 110);
+      const palette = ['rgba(38,54,128,0.20)', 'rgba(96,44,150,0.20)', 'rgba(112,16,44,0.16)', 'rgba(22,28,84,0.24)', 'rgba(64,24,100,0.18)'];
+      g.addColorStop(0, palette[Math.random() * palette.length | 0]);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      x.fillStyle = g; x.fillRect(0, 0, s, s);
+    }
+    for (let i = 0; i < 24000; i++) {
+      const gx = Math.random() * s, gy = Math.random() * s, len = 2 + Math.random() * 9;
+      const blue = Math.random() < 0.52;
+      x.strokeStyle = blue
+        ? `rgba(${28 + Math.random() * 34 | 0},${42 + Math.random() * 38 | 0},${92 + Math.random() * 70 | 0},${0.22 + Math.random() * 0.34})`
+        : `rgba(${62 + Math.random() * 48 | 0},${24 + Math.random() * 34 | 0},${92 + Math.random() * 60 | 0},${0.22 + Math.random() * 0.34})`;
+      x.lineWidth = 0.7 + Math.random() * 1.4;
+      x.beginPath(); x.moveTo(gx, gy); x.lineTo(gx + (Math.random() - 0.5) * 3.2, gy - len); x.stroke();
+    }
+    // dark red roots and spores bleeding through the violet soil
+    for (let i = 0; i < 90; i++) {
+      x.strokeStyle = `rgba(${74 + Math.random() * 54 | 0},${6 + Math.random() * 16 | 0},${22 + Math.random() * 24 | 0},${0.18 + Math.random() * 0.28})`;
+      x.lineWidth = 0.8 + Math.random() * 2.2;
+      const sx = Math.random() * s, sy = Math.random() * s;
+      x.beginPath(); x.moveTo(sx, sy);
+      for (let k = 0; k < 4; k++) x.lineTo(sx + (Math.random() - 0.5) * 70, sy + (Math.random() - 0.5) * 70);
+      x.stroke();
+    }
+    for (let i = 0; i < 420; i++) {
+      x.fillStyle = `rgba(${120 + Math.random() * 90 | 0},${40 + Math.random() * 60 | 0},${180 + Math.random() * 70 | 0},${0.1 + Math.random() * 0.2})`;
+      x.beginPath(); x.arc(Math.random() * s, Math.random() * s, 0.7 + Math.random() * 2.2, 0, 6.283); x.fill();
+    }
+  }, 26);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(250, 250), new THREE.MeshStandardMaterial({
+    map: witchGroundTex, color: 0xffffff, roughness: 0.98, metalness: 0.02,
+    normalMap: groundNormalTex, normalScale: new THREE.Vector2(0.9, 0.9),
+  }));
+  floor.name = 'nightshade-floor';
+  floor.rotation.x = -Math.PI / 2; floor.position.set(C.x, 0.004, C.z); floor.receiveShadow = true;
+  witchWorldGroup.add(floor);
+
+  // violet-blue forest ringing the hollow; every ninth tree carries the dark red bloom
+  const trees = [];
+  for (let i = 0; i < 64; i++) {
+    let a = i / 64 * Math.PI * 2 + (Math.random() - 0.5) * 0.16;
+    if (Math.abs(angDiff(a, GATE_ANGLE)) < 0.28) a += 0.36;
+    trees.push({
+      a, r: 18.5 + Math.random() * 30, h: 5 + Math.random() * 6,
+      lean: (Math.random() - 0.5) * 0.1, red: i % 9 === 4, seed: Math.random() * 100,
+    });
+  }
+  const dummy = new THREE.Object3D();
+  const trunkGeo = new THREE.CylinderGeometry(0.16, 0.46, 1, 6, 3);
+  {
+    const p = trunkGeo.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const k = 0.82 + hash2i(i * 7 + 3, 5) * 0.36;
+      p.setX(i, p.getX(i) * k); p.setZ(i, p.getZ(i) * k);
+    }
+    trunkGeo.computeVertexNormals();
+  }
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x1a1028, roughness: 1, flatShading: true });
+  const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, trees.length);
+  trees.forEach((tr, i) => {
+    const x = C.x + Math.cos(tr.a) * tr.r, z = C.z + Math.sin(tr.a) * tr.r;
+    dummy.position.set(x, tr.h / 2 - 0.08, z);
+    dummy.rotation.set(tr.lean, tr.seed, tr.lean * 0.7);
+    dummy.scale.set(0.9 + tr.h * 0.04, tr.h, 0.9 + tr.h * 0.04);
+    dummy.updateMatrix(); trunks.setMatrixAt(i, dummy.matrix);
+  });
+  trunks.instanceMatrix.needsUpdate = true; trunks.castShadow = true; trunks.receiveShadow = true;
+  witchWorldGroup.add(trunks);
+
+  const foliageGeo = new THREE.IcosahedronGeometry(1, 1);
+  {
+    const p = foliageGeo.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const k = 0.82 + hash2i(i * 13 + 7, 9) * 0.34;
+      p.setXYZ(i, p.getX(i) * k, p.getY(i) * (0.75 + k * 0.3), p.getZ(i) * k);
+    }
+    foliageGeo.computeVertexNormals();
+  }
+  const foliageMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff, roughness: 0.9, metalness: 0.02, flatShading: true,
+    emissive: 0x24104a, emissiveIntensity: 1.0,
+  });
+  const blossoms = new THREE.InstancedMesh(foliageGeo, foliageMat, trees.length * 3);
+  const bluePalette = [0x4b3cff, 0x5a5cff, 0x3958e8, 0x7a4dff, 0x2f3fc8];
+  const redPalette = [0x8e1230, 0xa8183a, 0x6a0a22];
+  const tint = new THREE.Color();
+  let bi = 0;
+  trees.forEach(tr => {
+    const x = C.x + Math.cos(tr.a) * tr.r, z = C.z + Math.sin(tr.a) * tr.r;
+    for (let k = 0; k < 3; k++) {
+      const ang = tr.seed + k * 2.1;
+      const off = k === 0 ? 0.4 : 1.2 + Math.random() * 1.2;
+      const rad = (2.0 + Math.random() * 1.5) * (0.75 + tr.h * 0.04);
+      dummy.position.set(x + Math.cos(ang) * off, tr.h * (0.62 + k * 0.16) + (Math.random() - 0.5) * 0.5, z + Math.sin(ang) * off);
+      dummy.rotation.set(Math.random() * 0.6, Math.random() * Math.PI * 2, Math.random() * 0.6);
+      dummy.scale.set(rad * (0.8 + Math.random() * 0.4), rad * (0.7 + Math.random() * 0.4), rad * (0.8 + Math.random() * 0.4));
+      dummy.updateMatrix(); blossoms.setMatrixAt(bi, dummy.matrix);
+      tint.setHex(tr.red ? redPalette[k % redPalette.length] : bluePalette[(bi + k) % bluePalette.length]);
+      blossoms.setColorAt(bi, tint); bi++;
+    }
+  });
+  blossoms.instanceMatrix.needsUpdate = true; blossoms.instanceColor.needsUpdate = true;
+  blossoms.castShadow = true; witchWorldGroup.add(blossoms);
+
+  // dark red shards sprouting just beyond the witchfire boundary
+  const crystalGeo = new THREE.OctahedronGeometry(0.6, 0);
+  const crystalMat = new THREE.MeshStandardMaterial({
+    color: 0x5e0a1c, emissive: 0xc21a3c, emissiveIntensity: 1.6,
+    roughness: 0.3, metalness: 0.15, flatShading: true,
+  });
+  const crystalCount = 52;
+  const crystals = new THREE.InstancedMesh(crystalGeo, crystalMat, crystalCount);
+  for (let i = 0; i < crystalCount; i++) {
+    let a = Math.random() * Math.PI * 2;
+    if (Math.abs(angDiff(a, GATE_ANGLE)) < 0.18) a += 0.32;
+    const rr = WITCH_R + 1.6 + Math.random() * 9;
+    const sc = 0.35 + Math.random() * 1.25;
+    dummy.position.set(C.x + Math.cos(a) * rr, sc * 0.55, C.z + Math.sin(a) * rr);
+    dummy.rotation.set((Math.random() - 0.5) * 0.5, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.5);
+    dummy.scale.set(sc, sc * (1.4 + Math.random() * 1.8), sc);
+    dummy.updateMatrix(); crystals.setMatrixAt(i, dummy.matrix);
+  }
+  crystals.instanceMatrix.needsUpdate = true; witchWorldGroup.add(crystals);
+
+  // blue glow-caps and crimson lamps tucked into the roots
+  const shroomGeo = new THREE.ConeGeometry(0.22, 0.65, 6);
+  const shroomMat = new THREE.MeshStandardMaterial({ color: 0x8ab8ff, emissive: 0x3a68ff, emissiveIntensity: 1.4, roughness: 0.5 });
+  const shrooms = new THREE.InstancedMesh(shroomGeo, shroomMat, 70);
+  for (let i = 0; i < 70; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const rr = WITCH_R + 2.2 + Math.random() * 15;
+    const sc = 0.5 + Math.random() * 1.2;
+    dummy.position.set(C.x + Math.cos(a) * rr, 0.3 * sc, C.z + Math.sin(a) * rr);
+    dummy.rotation.set((Math.random() - 0.5) * 0.25, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.25);
+    dummy.scale.set(sc, sc, sc);
+    dummy.updateMatrix(); shrooms.setMatrixAt(i, dummy.matrix);
+  }
+  shrooms.instanceMatrix.needsUpdate = true; witchWorldGroup.add(shrooms);
+
+  for (let i = 0; i < 4; i++) {
+    const a = i / 4 * Math.PI * 2 + 0.9, rr = WITCH_R + 4 + Math.random() * 6;
+    const li = new THREE.PointLight(0xb01838, 14, 18, 2);
+    li.position.set(C.x + Math.cos(a) * rr, 1.6 + Math.random() * 1.4, C.z + Math.sin(a) * rr);
+    witchWorldGroup.add(li);
+  }
+
+  // a crimson moon hanging beyond the canopy
+  const moonGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: fireGlowTex, color: 0xb02852, transparent: true, opacity: 0.55,
+    blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+  }));
+  moonGlow.scale.setScalar(34); moonGlow.position.set(C.x - 46, 44, C.z - 72);
+  witchWorldGroup.add(moonGlow);
+  const moonCore = new THREE.Mesh(new THREE.CircleGeometry(4.2, 32), new THREE.MeshBasicMaterial({
+    color: 0xd94870, transparent: true, opacity: 0.85, fog: false,
+  }));
+  moonCore.position.set(C.x - 46, 44, C.z - 72); moonCore.lookAt(C.x, 2, C.z);
+  witchWorldGroup.add(moonCore);
+
+  // drifting hex-motes
+  const moteMats = [0x9b7cff, 0x4a6cff, 0xc02048].map(c => new THREE.SpriteMaterial({
+    map: fireGlowTex, color: c, transparent: true, opacity: 0.55,
+    blending: THREE.AdditiveBlending, depthWrite: false, fog: true,
+  }));
+  for (let i = 0; i < 34; i++) {
+    const sp = new THREE.Sprite(moteMats[i % 3]);
+    const a = Math.random() * Math.PI * 2, rr = 4 + Math.random() * 30;
+    sp.position.set(C.x + Math.cos(a) * rr, 0.4 + Math.random() * 5, C.z + Math.sin(a) * rr);
+    sp.scale.setScalar(0.18 + Math.random() * 0.3);
+    sp.userData = { a, rr, y: sp.position.y, speed: 0.04 + Math.random() * 0.12, bob: Math.random() * 6.28 };
+    witchMotes.push(sp); witchWorldGroup.add(sp);
+  }
+}
+witchWorldGroup.visible = false;
 
 // ============ DARK FOREST & DISTANT RUINED KEEP ============
 {
@@ -1538,6 +1923,286 @@ function blobShadow(size, opacity) {
 const playerShadow = blobShadow(1.9, 0.38);
 const bossShadow = blobShadow(3.2, 0.42);
 
+// ============ MORGANA, THE NIGHTSHADE HEX ============
+const WITCH_BASE_SCALE = 1.28;
+function buildWitch() {
+  const g = new THREE.Group();
+  const root = new THREE.Group(); g.add(root);
+
+  // ---- materials: pale flesh, plum velvet, tarnished gold, black hair ----
+  const skinMat = new THREE.MeshPhysicalMaterial({
+    color: 0xd7c1c0, roughness: 0.55, metalness: 0.0,
+    sheen: 0.4, sheenRoughness: 0.8, sheenColor: new THREE.Color(0x8a4a63),
+    emissive: 0x1c0d24, emissiveIntensity: 0.32,
+  });
+  const robeMat = new THREE.MeshPhysicalMaterial({
+    color: 0x241331, metalness: 0.04, roughness: 0.82, side: THREE.DoubleSide,
+    map: clothTex, normalMap: clothNormalTex, normalScale: new THREE.Vector2(0.55, 0.55),
+    sheen: 0.85, sheenRoughness: 0.55, sheenColor: new THREE.Color(0x9b6bff),
+  });
+  const velvetMat = new THREE.MeshPhysicalMaterial({
+    color: 0x352044, metalness: 0.03, roughness: 0.74, side: THREE.DoubleSide,
+    map: clothTex, normalMap: clothNormalTex, normalScale: new THREE.Vector2(0.45, 0.45),
+    sheen: 1.0, sheenRoughness: 0.42, sheenColor: new THREE.Color(0xc08bff),
+  });
+  const underMat = new THREE.MeshStandardMaterial({ color: 0x120a1c, roughness: 0.92, map: clothTex });
+  const trimMat = new THREE.MeshStandardMaterial({ color: 0x9a7534, metalness: 0.9, roughness: 0.34, emissive: 0x2a0a44, emissiveIntensity: 0.6 });
+  const hairMat = new THREE.MeshPhysicalMaterial({ color: 0x100b16, roughness: 0.4, metalness: 0.08, sheen: 0.6, sheenRoughness: 0.35, sheenColor: new THREE.Color(0x5a3a88) });
+  const lipMat = new THREE.MeshStandardMaterial({ color: 0x6e2f42, roughness: 0.42, metalness: 0.05, emissive: 0x22080f, emissiveIntensity: 0.4 });
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xe6d2ff });
+  const scleraMat = new THREE.MeshStandardMaterial({ color: 0x150d18, roughness: 0.28 });
+  const orbMat = new THREE.MeshStandardMaterial({ color: 0xd9b7ff, emissive: 0x7b3aff, emissiveIntensity: 3.2, roughness: 0.15, metalness: 0.2 });
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0x24181a, roughness: 0.82, map: leatherTex });
+
+  const M = (geo, mat, x, y, z, parent) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z); m.castShadow = true;
+    if (parent) parent.add(m);
+    return m;
+  };
+  const RB = (w, h, d, r) => new RoundedBoxGeometry(w, h, d, 3, Math.max(0.004, Math.min(r ?? Math.min(w, h, d) * 0.3, Math.min(w, h, d) * 0.48)));
+
+  // ---- floor-length gown, folded and frayed at the hem ----
+  const skirtGeo = new THREE.CylinderGeometry(0.33, 1.03, 1.5, 64, 14, true);
+  {
+    const p = skirtGeo.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const ang = Math.atan2(x, z);
+      const v = Math.min(1, Math.max(0, (0.75 - y) / 1.5));
+      const fold = Math.sin(ang * 9 + v * 1.1) * 0.5 + Math.sin(ang * 17 - 0.7) * 0.26 + Math.sin(ang * 5 + v * 3.2) * 0.24;
+      const k = 1 + fold * (0.012 + v * 0.05);
+      let ny = y;
+      if (v > 0.985) ny -= 0.03 + Math.abs(Math.sin(ang * 7.0)) * 0.05;
+      p.setXYZ(i, x * k, ny, z * k);
+    }
+    skirtGeo.computeVertexNormals();
+  }
+  const robe = new THREE.Mesh(skirtGeo, robeMat);
+  robe.position.y = 0.78; robe.receiveShadow = true; root.add(robe);
+  const innerSkirt = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.9, 1.42, 32, 3, true), underMat);
+  innerSkirt.position.y = 0.75; root.add(innerSkirt);
+  const hem = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.028, 8, 64), trimMat);
+  hem.rotation.x = Math.PI / 2; hem.position.y = 0.10; root.add(hem);
+
+  // overlapping overskirt panels, animated as cloth
+  const skirtPanels = [];
+  function drapePanel(a, width, len, mat, rTop, rBottom, yBase) {
+    const geo = new THREE.PlaneGeometry(1, 1, 8, 18);
+    const p = geo.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const u = p.getX(i) + 0.5;
+      const v = 0.5 - p.getY(i);
+      const ang = a + (u - 0.5) * width;
+      const rad = rTop + (rBottom - rTop) * v;
+      const y = -v * len + (v > 0.97 ? -Math.abs(Math.sin(u * Math.PI * 4 + a * 3)) * 0.05 : 0);
+      p.setXYZ(i, Math.sin(ang) * rad, y, Math.cos(ang) * rad);
+    }
+    geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, mat);
+    m.position.y = yBase; m.castShadow = true; m.receiveShadow = true;
+    root.add(m); skirtPanels.push(m);
+    return m;
+  }
+  for (let i = 0; i < 11; i++) drapePanel(i / 11 * Math.PI * 2, 0.54, 1.4 + (i % 3) * 0.05, i % 2 ? robeMat : velvetMat, 0.37, 1.0, 1.52);
+
+  // ---- fitted bodice, belt and lacing ----
+  const bodicePts = [
+    new THREE.Vector2(0.30, 0.00), new THREE.Vector2(0.32, 0.08),
+    new THREE.Vector2(0.305, 0.18), new THREE.Vector2(0.295, 0.28),
+    new THREE.Vector2(0.315, 0.38), new THREE.Vector2(0.37, 0.48),
+    new THREE.Vector2(0.415, 0.58), new THREE.Vector2(0.42, 0.64),
+    new THREE.Vector2(0.36, 0.71), new THREE.Vector2(0.24, 0.76),
+    new THREE.Vector2(0.145, 0.785),
+  ];
+  const bodice = new THREE.Mesh(new THREE.LatheGeometry(bodicePts, 48), velvetMat);
+  bodice.position.y = 1.40; bodice.castShadow = true; root.add(bodice);
+  const belt = new THREE.Mesh(new THREE.TorusGeometry(0.315, 0.03, 8, 40), trimMat);
+  belt.rotation.x = Math.PI / 2; belt.position.y = 1.44; root.add(belt);
+  M(new THREE.OctahedronGeometry(0.055, 0), orbMat, 0, 1.44, 0.325, root);
+  for (let i = 0; i < 10; i++) {
+    const a = i / 10 * Math.PI * 2;
+    const bone = M(RB(0.014, 0.44, 0.012, 0.005), trimMat, Math.sin(a) * 0.345, 1.70, Math.cos(a) * 0.345, root);
+    bone.rotation.y = a;
+  }
+  for (let i = 0; i < 5; i++) {
+    const lace = M(new THREE.TorusGeometry(0.15, 0.005, 4, 16, Math.PI * 0.8), trimMat, 0, 1.55 + i * 0.075, 0.345, root);
+    lace.rotation.z = Math.PI / 2 + (i % 2 ? 0.7 : -0.7);
+  }
+
+  // ---- shoulders, standing cowl and short mantle ----
+  const shoulders = M(new THREE.SphereGeometry(0.4, 24, 16), robeMat, 0, 1.98, 0, root);
+  shoulders.scale.set(1.18, 0.52, 0.84);
+  const cowl = new THREE.Mesh(new THREE.CylinderGeometry(0.225, 0.62, 0.52, 40, 4, true, 0.52, Math.PI * 2 - 1.04), velvetMat);
+  cowl.position.y = 2.01; cowl.castShadow = true; root.add(cowl);
+  const cowlTrim = new THREE.Mesh(new THREE.TorusGeometry(0.60, 0.014, 6, 40), trimMat);
+  cowlTrim.rotation.x = Math.PI / 2; cowlTrim.position.y = 1.77; root.add(cowlTrim);
+  for (let i = 0; i < 7; i++) {
+    const a = Math.PI - 1.15 + i / 6 * 2.3;
+    drapePanel(a, 0.38, 0.95 + (i % 3) * 0.1, i % 2 ? robeMat : velvetMat, 0.5, 0.7, 2.0);
+  }
+
+  // ---- neck and head ----
+  const head = new THREE.Group(); head.position.y = 2.32; root.add(head);
+  M(new THREE.CylinderGeometry(0.088, 0.112, 0.22, 16), skinMat, 0, -0.19, 0.005, head);
+  const skull = M(new THREE.SphereGeometry(0.215, 28, 22), skinMat, 0, 0, 0, head);
+  skull.scale.set(0.9, 1.03, 0.95);
+  const jaw = M(new THREE.SphereGeometry(0.155, 20, 16), skinMat, 0, -0.11, 0.03, head);
+  jaw.scale.set(0.8, 0.74, 0.84);
+  const chin = M(new THREE.SphereGeometry(0.07, 14, 10), skinMat, 0, -0.188, 0.105, head);
+  chin.scale.set(0.82, 0.7, 0.72);
+  for (const s of [-1, 1]) {
+    const cheek = M(new THREE.SphereGeometry(0.055, 12, 10), skinMat, 0.108 * s, -0.012, 0.145, head);
+    cheek.scale.set(0.95, 0.62, 0.7);
+    const ear = M(new THREE.SphereGeometry(0.045, 12, 10), skinMat, 0.196 * s, 0.005, 0.005, head);
+    ear.scale.set(0.42, 1.1, 0.72);
+  }
+  const nose = M(new THREE.ConeGeometry(0.032, 0.1, 6), skinMat, 0, -0.012, 0.216, head);
+  nose.rotation.x = Math.PI / 2; nose.scale.set(1, 1, 0.8);
+  const lip = M(new THREE.CapsuleGeometry(0.021, 0.062, 3, 8), lipMat, 0, -0.09, 0.199, head);
+  lip.rotation.z = Math.PI / 2; lip.scale.set(1, 1, 0.55);
+  const lipU = M(new THREE.CapsuleGeometry(0.009, 0.05, 2, 6), lipMat, 0, -0.074, 0.205, head);
+  lipU.rotation.z = Math.PI / 2; lipU.scale.set(1, 1, 0.5);
+  const eyes = [];
+  for (const s of [-1, 1]) {
+    const socket = M(new THREE.SphereGeometry(0.044, 14, 12), scleraMat, 0.078 * s, 0.035, 0.174, head);
+    socket.scale.set(1, 0.72, 0.62);
+    const iris = M(new THREE.SphereGeometry(0.019, 10, 8), eyeMat, 0.078 * s, 0.035, 0.208, head);
+    iris.scale.set(1, 1, 0.62); eyes.push(iris);
+    const brow = M(RB(0.095, 0.012, 0.018, 0.005), hairMat, 0.082 * s, 0.084, 0.192, head);
+    brow.rotation.z = -0.12 * s;
+  }
+
+  // ---- hair: cap, back mass and loose wavy locks ----
+  const hairStrands = [];
+  const hairCap = M(new THREE.SphereGeometry(0.235, 28, 18, 0, Math.PI * 2, 0, Math.PI * 0.62), hairMat, 0, 0.018, -0.012, head);
+  hairCap.scale.set(1.03, 1.09, 1.06);
+  const hairBack = M(new THREE.SphereGeometry(0.2, 20, 16), hairMat, 0, -0.15, -0.115, head);
+  hairBack.scale.set(1.15, 1.7, 0.9);
+  function hairLock(x, z, len, rad, phase, bend) {
+    const geo = new THREE.CylinderGeometry(rad * 0.35, rad, len, 6, 12);
+    const p = geo.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const y = p.getY(i), t = (len / 2 - y) / len;
+      p.setX(i, p.getX(i) + Math.sin(t * 3.1 + phase) * bend * t);
+      p.setZ(i, p.getZ(i) + Math.cos(t * 2.4 + phase) * bend * 0.7 * t);
+    }
+    geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, hairMat);
+    m.position.set(x, 0.03 - len / 2, z);
+    m.userData = { phase, bend };
+    m.castShadow = true; head.add(m); hairStrands.push(m);
+    return m;
+  }
+  for (let i = 0; i < 12; i++) {
+    const a = -1.15 + i / 11 * 2.3;
+    hairLock(Math.sin(a) * 0.185, -0.11 - Math.cos(a) * 0.07, 0.62 + (i % 4) * 0.11, 0.028, i * 0.7, 0.07);
+  }
+  for (let i = 0; i < 4; i++) {
+    const s = i < 2 ? -1 : 1;
+    hairLock(0.155 * s, 0.02 + (i % 2) * 0.03, 0.72 + (i % 2) * 0.12, 0.026, 2.1 + i, 0.05);
+  }
+  const crown = new THREE.Group(); crown.position.y = 0.235; head.add(crown);
+  const crownRing = new THREE.Mesh(new THREE.TorusGeometry(0.205, 0.018, 8, 32), trimMat);
+  crownRing.rotation.x = Math.PI / 2; crown.add(crownRing);
+  const crownRing2 = new THREE.Mesh(new THREE.TorusGeometry(0.188, 0.009, 6, 30), trimMat);
+  crownRing2.rotation.x = Math.PI / 2; crownRing2.position.y = 0.05; crown.add(crownRing2);
+  for (let i = 0; i < 8; i++) {
+    const a = i / 8 * Math.PI * 2;
+    const h = 0.16 + (i % 2) * 0.11 + (i === 0 ? 0.06 : 0);
+    const spike = M(new THREE.ConeGeometry(0.022, h, 5), trimMat, Math.cos(a) * 0.2, h / 2 + 0.02, Math.sin(a) * 0.2, crown);
+    spike.rotation.z = -Math.cos(a) * 0.22; spike.rotation.x = Math.sin(a) * 0.22;
+    M(new THREE.OctahedronGeometry(0.026, 0), orbMat, Math.cos(a) * 0.2, 0.035, Math.sin(a) * 0.2, crown);
+  }
+
+  // ---- arms: articulated elbow, bell cuff, fingers ----
+  function arm(side) {
+    const sh = new THREE.Group(); sh.position.set(0.35 * side, 1.97, 0); root.add(sh);
+    const upper = M(new THREE.CapsuleGeometry(0.085, 0.24, 4, 12), robeMat, 0, -0.20, 0, sh);
+    upper.scale.set(1.1, 1, 0.92);
+    const elbow = new THREE.Group(); elbow.position.y = -0.42; sh.add(elbow);
+    M(new THREE.CylinderGeometry(0.07, 0.115, 0.32, 12, 2, true), robeMat, 0, -0.16, 0, elbow);
+    const cuff = new THREE.Mesh(new THREE.ConeGeometry(0.19, 0.28, 18, 3, true), robeMat);
+    cuff.position.y = -0.39; cuff.castShadow = true; elbow.add(cuff);
+    const cuffTrim = M(new THREE.TorusGeometry(0.145, 0.012, 6, 26), trimMat, 0, -0.34, 0, elbow);
+    cuffTrim.rotation.x = Math.PI / 2;
+    const hand = new THREE.Group(); hand.position.y = -0.555; elbow.add(hand);
+    M(RB(0.078, 0.105, 0.048, 0.022), skinMat, 0, -0.025, 0, hand);
+    for (let f = 0; f < 4; f++) {
+      const base = new THREE.Group(); base.position.set((f - 1.5) * 0.019, -0.078, 0.012); hand.add(base);
+      M(new THREE.CapsuleGeometry(0.0085, 0.042, 2, 5), skinMat, 0, -0.028, 0, base);
+      const tip = M(new THREE.CapsuleGeometry(0.0075, 0.032, 2, 5), skinMat, 0, -0.071, 0.012, base);
+      tip.rotation.x = -0.85;
+      base.rotation.x = -0.28 + Math.abs(f - 1.5) * 0.05;
+    }
+    const thumb = new THREE.Group(); thumb.position.set(0.042 * side, -0.018, 0.012); hand.add(thumb);
+    const th = M(new THREE.CapsuleGeometry(0.0095, 0.048, 2, 5), skinMat, 0, -0.03, 0.008, thumb);
+    th.rotation.z = -0.95 * side;
+    sh.rotation.z = -side * 0.10;
+    return { sh, elbow, hand };
+  }
+  const armR = arm(1), armL = arm(-1);
+
+  // ---- gnarled staff with a caged crystal ----
+  const staff = new THREE.Group(); staff.position.set(0.01, -0.04, 0.035); armR.hand.add(staff);
+  const staffCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, -0.98, 0), new THREE.Vector3(0.02, -0.45, 0.015),
+    new THREE.Vector3(-0.02, 0.35, -0.01), new THREE.Vector3(0.03, 1.05, 0.02),
+    new THREE.Vector3(0.01, 1.26, 0),
+  ]);
+  const shaft = new THREE.Mesh(new THREE.TubeGeometry(staffCurve, 28, 0.033, 8, false), woodMat);
+  shaft.castShadow = true; staff.add(shaft);
+  for (let i = 0; i < 7; i++) {
+    const wrap = M(new THREE.TorusGeometry(0.041, 0.008, 5, 14), underMat, 0, -0.5 + i * 0.11, 0, staff);
+    wrap.rotation.x = Math.PI / 2;
+  }
+  for (const y of [-0.15, 0.35, 0.72]) {
+    const knot = M(new THREE.SphereGeometry(0.055, 8, 6), woodMat, 0.015, y, 0.01, staff);
+    knot.scale.set(1, 0.65, 1);
+    const rune = M(new THREE.BoxGeometry(0.012, 0.09, 0.012), orbMat, 0, y, 0.05, staff);
+    rune.rotation.z = 0.25;
+  }
+  for (let i = 0; i < 3; i++) {
+    const a = i / 3 * Math.PI * 2;
+    const prong = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0.01, 1.0, 0),
+      new THREE.Vector3(Math.cos(a) * 0.22, 1.16, Math.sin(a) * 0.22),
+      new THREE.Vector3(Math.cos(a) * 0.14, 1.40, Math.sin(a) * 0.14),
+    ]);
+    const pm = new THREE.Mesh(new THREE.TubeGeometry(prong, 12, 0.014, 6, false), woodMat);
+    pm.castShadow = true; staff.add(pm);
+  }
+  const staffCrystal = M(new THREE.OctahedronGeometry(0.205, 0), orbMat, 0, 1.24, 0, staff);
+  staffCrystal.scale.set(1, 1.7, 1);
+  const staffGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: fireGlowTex, color: 0x9b5cff, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, fog: true }));
+  staffGlow.scale.setScalar(1.5); staffGlow.position.y = 1.24; staff.add(staffGlow);
+  const staffLight = new THREE.PointLight(0x9b5cff, 9, 9, 2); staffLight.position.y = 1.24; staff.add(staffLight);
+
+  const orbs = new THREE.Group(); orbs.position.y = 1.72; root.add(orbs);
+  for (let i = 0; i < 3; i++) {
+    const orb = M(new THREE.SphereGeometry(0.082, 12, 10), orbMat, 0, 0, 0, orbs);
+    const a = i / 3 * Math.PI * 2;
+    orb.position.set(Math.cos(a) * 0.82, Math.sin(a * 2) * 0.18 + 0.22, Math.sin(a) * 0.82);
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: fireGlowTex, color: 0x9b5cff, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, fog: true }));
+    glow.scale.setScalar(0.6); glow.position.copy(orb.position); orbs.add(glow);
+  }
+
+  const aura = new THREE.Sprite(new THREE.SpriteMaterial({ map: fireGlowTex, color: 0x7b3aff, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false, fog: true }));
+  aura.scale.set(6, 6, 1); aura.position.y = 1.45; root.add(aura);
+
+  g.scale.setScalar(WITCH_BASE_SCALE);
+  g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  return { group: g, parts: {
+    root, robe, shoulders, head, hood: cowl, crown, armL: armL.sh, armR: armR.sh,
+    elbowL: armL.elbow, elbowR: armR.elbow, handL: armL.hand, handR: armR.hand,
+    staff, staffCrystal, staffGlow, staffLight, orbs, aura, robMat: robeMat,
+    skirtPanels, hairStrands, eyes, mantle: cowl, bodice,
+  } };
+}
+const witchK = buildWitch();
+scene.add(witchK.group); witchK.group.name = 'witch'; witchK.group.visible = false;
+const witchShadow = blobShadow(3.1, 0.36); witchShadow.visible = false;
+
 // cloth simulation: cache rest positions, then let capes breathe and billow
 function cacheCloth(mesh, amp = 1) {
   if (!mesh) return;
@@ -1547,6 +2212,7 @@ function cacheCloth(mesh, amp = 1) {
   mesh.userData.cloth = { base: Float32Array.from(p.array), y0, y1, amp };
 }
 for (const K of [playerK, bossK]) { cacheCloth(K.parts.cape, 0.9); cacheCloth(K.parts.cape2, 1.25); }
+for (const panel of witchK.parts.skirtPanels) cacheCloth(panel, 0.5);
 function animateCloth(mesh, time, updateNormals = true) {
   const c = mesh.userData.cloth; if (!c) return;
   const p = mesh.geometry.attributes.position, base = c.base;
@@ -1759,15 +2425,200 @@ function clearBossHazards() {
   for (let i = pillars.length - 1; i >= 0; i--) removePillar(i);
 }
 
+// ============ WITCH HAZARDS: hex bolts, curse circles, veil waves ============
+const hexBolts = [];
+const hexBoltGeo = new THREE.SphereGeometry(0.2, 8, 6);
+const hexBoltCoreMat = new THREE.MeshBasicMaterial({ color: 0xe6d2ff });
+function spawnHexBolt(origin, angle, speed, dmg) {
+  const grp = new THREE.Group();
+  const core = new THREE.Mesh(hexBoltGeo, hexBoltCoreMat); grp.add(core);
+  const glow = new THREE.Sprite(hexEmberMat); glow.scale.setScalar(1.1); grp.add(glow);
+  grp.position.copy(origin);
+  const vel = new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle)).multiplyScalar(speed);
+  scene.add(grp);
+  hexBolts.push({ grp, vel, life: 4.2, dmg, t: 0 });
+}
+function spawnHexBoltVolley(count, spread, speed, dmg) {
+  const origin = new THREE.Vector3(W.pos.x, 2.0, W.pos.z);
+  const base = Math.atan2(P.pos.x - W.pos.x, P.pos.z - W.pos.z);
+  for (let i = 0; i < count; i++) {
+    const off = (i - (count - 1) / 2) * spread;
+    spawnHexBolt(origin, base + off, speed + Math.random() * 0.8, dmg);
+  }
+  sfx.cast();
+}
+function updateHexBolts(dt) {
+  for (let i = hexBolts.length - 1; i >= 0; i--) {
+    const b = hexBolts[i];
+    if (!b) continue;
+    b.t += dt; b.life -= dt;
+    b.grp.position.addScaledVector(b.vel, dt);
+    b.grp.position.y = 1.25 + Math.sin(b.t * 8) * 0.12;
+    b.grp.rotation.y += dt * 9;
+    if (Math.random() < 0.5) spawnSparks(b.grp.position, 1, 0x9b5cff, 0.7);
+    if (P.state !== 'dead' && Math.hypot(P.pos.x - b.grp.position.x, P.pos.z - b.grp.position.z) < 0.72) {
+      damagePlayer(b.dmg, b.grp.position, 'hex');
+      removeHexBolt(i); continue;
+    }
+    const dx = b.grp.position.x - ARENA.center.x, dz = b.grp.position.z - ARENA.center.z;
+    if (b.life <= 0 || Math.hypot(dx, dz) > ARENA.radius + 5) removeHexBolt(i);
+  }
+}
+function removeHexBolt(i) {
+  const b = hexBolts[i]; if (!b) return;
+  scene.remove(b.grp); hexBolts.splice(i, 1);
+}
+function clearHexBolts() {
+  for (let i = hexBolts.length - 1; i >= 0; i--) removeHexBolt(i);
+}
+
+const hexPillars = [];
+function spawnHexPillar(x, z, delay = 1.2, radius = 2.0, dmg = 44, mult = 1) {
+  const grp = new THREE.Group(); grp.position.set(x, 0, z); scene.add(grp);
+  const ringMat = new THREE.MeshBasicMaterial({ color: 0x9b5cff, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+  const fillMat = new THREE.MeshBasicMaterial({ color: 0xd54aff, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+  const ring = new THREE.Mesh(pillarRingGeo, ringMat);
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05; ring.scale.setScalar(radius); grp.add(ring);
+  const fill = new THREE.Mesh(pillarFillGeo, fillMat);
+  fill.rotation.x = -Math.PI / 2; fill.position.y = 0.04; fill.scale.setScalar(radius * 0.2); grp.add(fill);
+  const fire = new THREE.Group(); fire.visible = false; grp.add(fire);
+  for (let i = 0; i < 6; i++) {
+    const isOuter = i % 2 === 0;
+    const s = new THREE.Sprite(isOuter ? hexFlameOuterMat : hexFlameCoreMat);
+    s.position.set((Math.random() - 0.5) * radius * 0.5, 1.0 + i * 1.05, (Math.random() - 0.5) * radius * 0.5);
+    s.scale.set(radius * (isOuter ? 2.6 - i * 0.12 : 1.15), 2.0 + Math.random() * 0.7, 1);
+    fire.add(s);
+  }
+  const glow = new THREE.Sprite(hexEmberMat);
+  glow.scale.setScalar(radius * 4.2); glow.position.y = 0.9; fire.add(glow);
+  hexPillars.push({ grp, ring, fill, ringMat, fillMat, fire, x, z, radius, dmg, mult, t: 0, delay, state: 'indicator', eruptT: 0 });
+}
+function updateHexPillars(dt) {
+  for (let i = hexPillars.length - 1; i >= 0; i--) {
+    const p = hexPillars[i];
+    if (!p) continue;
+    p.t += dt;
+    if (p.state === 'indicator') {
+      const k = Math.min(1, p.t / p.delay);
+      const pulse = 0.55 + 0.45 * Math.sin(p.t * 14);
+      p.ring.scale.setScalar(p.radius * (0.94 + pulse * 0.07));
+      p.ringMat.opacity = 0.3 + pulse * 0.35;
+      p.fill.scale.setScalar(p.radius * (0.2 + 0.8 * k));
+      p.fillMat.opacity = 0.06 + k * 0.18 + pulse * 0.04;
+      if (p.t >= p.delay) {
+        p.state = 'erupt'; p.eruptT = 0;
+        p.fire.visible = true; p.ring.visible = false; p.fill.visible = false;
+        sfx.pillar(); G.shake = Math.max(G.shake, 0.35);
+        spawnRing(new THREE.Vector3(p.x, 0, p.z), 0x9b5cff, p.radius * 2.6);
+        spawnSparks(new THREE.Vector3(p.x, 0.5, p.z), 16, 0x9b5cff, 6);
+        if (P.state !== 'dead' && Math.hypot(P.pos.x - p.x, P.pos.z - p.z) < p.radius + 0.35) {
+          damagePlayer(Math.round(p.dmg * p.mult), new THREE.Vector3(p.x, 0, p.z), 'curse');
+        }
+      }
+    } else {
+      p.eruptT += dt;
+      const rise = Math.min(1, p.eruptT / 0.16);
+      const fade = p.eruptT > 0.75 ? Math.max(0, 1 - (p.eruptT - 0.75) / 0.75) : 1;
+      p.fire.scale.set(fade * (0.9 + rise * 0.2), rise * (0.6 + fade * 0.6), fade * (0.9 + rise * 0.2));
+      if (p.eruptT > 1.5) {
+        scene.remove(p.grp); p.ringMat.dispose(); p.fillMat.dispose(); hexPillars.splice(i, 1);
+      }
+    }
+  }
+}
+function clearHexPillars() {
+  for (let i = hexPillars.length - 1; i >= 0; i--) {
+    const p = hexPillars[i]; scene.remove(p.grp); p.ringMat.dispose(); p.fillMat.dispose(); hexPillars.splice(i, 1);
+  }
+}
+
+const hexWaves = [];
+const hexWaveGeo = new THREE.RingGeometry(0.93, 1.0, 64);
+function spawnHexWave(cx, cz, dmg, speed = 11, maxR = WITCH_R, color = 0x9b5cff) {
+  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false });
+  const mesh = new THREE.Mesh(hexWaveGeo, mat);
+  mesh.rotation.x = -Math.PI / 2; mesh.position.set(cx, 0.1, cz);
+  mesh.scale.setScalar(0.8);
+  scene.add(mesh);
+  hexWaves.push({ mesh, mat, cx, cz, r: 0.8, maxR, speed, dmg, hit: false });
+}
+function updateHexWaves(dt) {
+  for (let i = hexWaves.length - 1; i >= 0; i--) {
+    const w = hexWaves[i];
+    if (!w) continue;
+    w.r += w.speed * dt;
+    w.mesh.scale.setScalar(w.r);
+    w.mat.opacity = 0.9 * Math.max(0, 1 - w.r / w.maxR);
+    if (!w.hit && P.state !== 'dead') {
+      const d = Math.hypot(P.pos.x - w.cx, P.pos.z - w.cz);
+      if (Math.abs(d - w.r) < 0.8) { w.hit = true; damagePlayer(w.dmg, new THREE.Vector3(w.cx, 0, w.cz), 'veil'); }
+    }
+    if (w.r >= w.maxR) { scene.remove(w.mesh); w.mat.dispose(); hexWaves.splice(i, 1); }
+  }
+}
+function clearHexWaves() {
+  for (let i = hexWaves.length - 1; i >= 0; i--) { const w = hexWaves[i]; scene.remove(w.mesh); w.mat.dispose(); hexWaves.splice(i, 1); }
+}
+function clearHexHazards() {
+  clearHexBolts(); clearHexPillars(); clearHexWaves();
+}
+
 // ============ GAME STATE ============
 const G = {
   mode: 'title', // title | play | dead | victory
+  bossId: 'duncan',
   inArena: false, bossActive: false, bossDead: false,
+  defeated: { duncan: false, witch: false },
   locked: false, ng: 0, fightTime: 0, hitstop: 0, paused: false,
   camYaw: 0, camPitch: 0.32, camDist: 6.5,
   shake: 0,
   awakening: false, awakeT: 0, awakeBurst: false, bossRevealed: false, bossRevealY: 0,
+  witchAwakening: false, witchAwakeT: 0,
 };
+
+const ARENAS = {
+  duncan: { id: 'duncan', center: new THREE.Vector3(0, 0, 0), radius: ARENA_R, stone: stonePos },
+  witch: { id: 'witch', center: WITCH_CENTER, radius: WITCH_R, stone: witchStonePos },
+};
+let ARENA = ARENAS.duncan;
+
+const BOSSES = {
+  duncan: {
+    id: 'duncan', name: 'SER DUNCAN', epithet: 'THE ASHEN KNIGHT', glyph: '⚔',
+    accent: '#ff9a46', deep: '#5e130c', difficulty: 'THE FIRST VIGIL',
+    desc: 'A knight who never left his post. Steel, embers, and a duel that forgives nothing.',
+    bossName: 'SER DUNCAN  ·  THE ASHEN KNIGHT',
+    arena: ARENAS.duncan,
+  },
+  witch: {
+    id: 'witch', name: 'MORGANA', epithet: 'THE NIGHTSHADE HEX', glyph: '☾',
+    accent: '#b47cff', deep: '#3a0f6e', difficulty: 'THE VEIL UNBOUND',
+    desc: 'A sorceress who traded her name for the dark. Her hollow is a violet-blue forest lit by hexfire and old blood, far from every ashen road.',
+    bossName: 'MORGANA  ·  THE NIGHTSHADE HEX',
+    arena: ARENAS.witch,
+  },
+};
+function activeBoss() { return G.bossId === 'witch' ? W : B; }
+function activeBossGroup() { return G.bossId === 'witch' ? witchK.group : bossK.group; }
+function activeStonePos() { return ARENA.stone; }
+function activeBossScale() {
+  return G.bossId === 'witch'
+    ? witchK.group.scale.x / WITCH_BASE_SCALE
+    : bossK.group.scale.x / BOSS_BASE_SCALE;
+}
+function activeBossAimY() { return G.bossId === 'witch' ? 2.05 : 2.05 * activeBossScale(); }
+function setBossName(id) {
+  const def = BOSSES[id] || BOSSES.duncan;
+  bossNameEl.textContent = def.bossName;
+  bossPlate.style.setProperty('--boss-accent', def.accent);
+  bossPlate.style.setProperty('--boss-deep', def.deep || '#5e130c');
+}
+function clampToActiveArena(pos, pad = 0.8) {
+  const c = ARENA.center;
+  const dx = pos.x - c.x, dz = pos.z - c.z;
+  const d = Math.hypot(dx, dz), maxR = ARENA.radius - pad;
+  if (d > maxR && d > 1e-6) { pos.x = c.x + dx / d * maxR; pos.z = c.z + dz / d * maxR; }
+}
 const P = {
   pos: new THREE.Vector3(1.9, 0, 27.6), yaw: Math.PI, hp: TUNE.playerHP, maxHP: TUNE.playerHP,
   st: TUNE.playerST, stDelay: 0, flasks: TUNE.flasks,
@@ -1790,6 +2641,7 @@ function saveGame(silent = false) {
       spoils: P.spoils,
       equippedSpoils: P.equippedSpoils,
       ng: G.ng,
+      defeated: G.defeated,
       savedAt: Date.now(),
     }));
     if (!silent) {
@@ -1820,6 +2672,10 @@ function loadGame() {
   P.spoils = Array.isArray(d.spoils) ? d.spoils.filter(id => SPOILS.some(s => s.id === id)) : [];
   P.equippedSpoils = P.spoils.includes(d.equippedSpoils) ? d.equippedSpoils : null;
   G.ng = Number.isFinite(d.ng) ? Math.max(0, Math.floor(d.ng)) : 0;
+  G.defeated = {
+    duncan: !!(d.defeated && d.defeated.duncan),
+    witch: !!(d.defeated && d.defeated.witch),
+  };
   // rebuild stats from a clean base so restoring is idempotent
   P.mods = { dmg: 1, hp: 1, st: 1, spd: 1, flask: 1 };
   P.maxHP = TUNE.playerHP; P.stMax = TUNE.playerST;
@@ -1838,9 +2694,14 @@ function eraseSave() {
   P.mods = { dmg: 1, hp: 1, st: 1, spd: 1, flask: 1 };
   P.maxHP = TUNE.playerHP; P.stMax = TUNE.playerST;
   G.ng = 0; G.inArena = false; G.bossDead = false; G.bossActive = false; G.fightTime = 0;
+  G.defeated = { duncan: false, witch: false };
+  G.bossId = 'duncan'; ARENA = ARENAS.duncan;
+  witchArenaGroup.visible = false; witchWorldGroup.visible = false;
+  applyWorldStyle('duncan');
   applyWeaponMesh('longsword');
   closeInventory();
-  resetBoss(); resetPlayer(); updateFlasks(); updateWeaponLabel(); updateHUD();
+  resetBoss(); resetWitch(); resetPlayer(); updateFlasks(); updateWeaponLabel(); updateHUD();
+  setBossName(G.bossId);
   const el = document.getElementById('save-note'); if (el) el.textContent = SAVE_NOTE;
   showCenter('SAVE ERASED', 'a new vigil begins');
 }
@@ -1849,6 +2710,24 @@ const B = {
   state: 'dormant', t: 0, aiT: 0, decideCd: 0, attackKind: '', hasHit: false,
   poise: 100, blocking: false, phase2: false, introT: 0, specialCd: 0,
 };
+const W = {
+  pos: new THREE.Vector3(WITCH_CENTER.x, 0, WITCH_CENTER.z - 4), yaw: Math.PI, hp: TUNE.witchHP, maxHP: TUNE.witchHP,
+  state: 'dormant', t: 0, decideCd: 0, attackKind: '', hasHit: false,
+  phase2: false, specialCd: 0, staggerAcc: 0, deadT: 0, volleyCount: 0,
+};
+function resetWitch() {
+  W.maxHP = TUNE.witchHP + G.ng * 140;
+  W.hp = W.maxHP; W.pos.set(WITCH_CENTER.x, 0, WITCH_CENTER.z - 4); W.yaw = Math.PI;
+  W.state = 'dormant'; W.t = 0; W.decideCd = 0; W.attackKind = ''; W.hasHit = false;
+  W.phase2 = false; W.specialCd = 0; W.staggerAcc = 0; W.deadT = 0; W.volleyCount = 0;
+  G.witchAwakening = false; G.witchAwakeT = 0;
+  clearHexHazards();
+  witchK.group.scale.setScalar(WITCH_BASE_SCALE);
+  witchK.group.position.copy(W.pos); witchK.group.rotation.y = W.yaw;
+  witchK.group.visible = false; witchShadow.visible = false;
+  if (G.bossId === 'witch') { bossPlate.classList.add('hidden'); G.bossActive = false; }
+  telegraphEl.classList.add('hidden');
+}
 function resetBoss(scaleHp = 1) {
   stopBossMusic();
   B.maxHP = (TUNE.bossHP + G.ng * 150) * scaleHp;
@@ -1873,7 +2752,8 @@ function resetPlayer() {
   P.state = 'idle'; P.t = 0; P.iframes = false; P.drinkHeal = 0;
 }
 const saveRestored = loadGame();
-resetBoss(); resetPlayer();
+resetBoss(); resetWitch(); resetPlayer();
+applyWorldStyle(G.bossId);
 
 // ============ INPUT ============
 const keys = {};
@@ -1885,10 +2765,14 @@ addEventListener('keydown', e => {
     return;
   }
   if (e.code === 'Tab' || e.code === 'KeyI') { e.preventDefault(); toggleInventory(); return; }
-  if (e.code === 'Escape') { if (!inventoryEl.classList.contains('hidden')) closeInventory(); return; }
+  if (e.code === 'KeyT') { e.preventDefault(); toggleVigilMenu(); return; }
+  if (e.code === 'Escape') {
+    if (!vigilMenuEl.classList.contains('hidden')) { closeVigilMenu(); return; }
+    if (!inventoryEl.classList.contains('hidden')) closeInventory();
+    return;
+  }
   if (/^Digit[1-8]$/.test(e.code)) { const id = WEAPON_ORDER[+e.code.slice(5) - 1]; if (P.owned.includes(id)) equipWeapon(id); return; }
-  if (G.mode !== 'play' || G.awakening) return;
-  if (e.code === 'KeyQ') { setLock(!G.locked); if (G.locked) sfx.bonfire(); }
+  if (G.mode !== 'play' || G.awakening || G.witchAwakening) return;
   if (e.code === 'KeyR') tryDrink();
   if (e.code === 'KeyE') tryInteract();
   if (e.code === 'KeyF') tryHeavy();
@@ -1901,7 +2785,7 @@ canvas.addEventListener('mousedown', e => {
   if (G.mode === 'play' && canvas.requestPointerLock && document.pointerLockElement !== canvas) {
     try { canvas.requestPointerLock(); } catch {}
   }
-  if (G.mode !== 'play' || G.awakening) return;
+  if (G.mode !== 'play' || G.awakening || G.witchAwakening) return;
   if (e.button === 0) tryAttack();
   if (e.button === 2) tryHeavy();
 });
@@ -1944,7 +2828,11 @@ function tryDrink() {
   P.flasks--; P.state = 'drink'; P.t = 0; P.drinkHeal = Math.round(TUNE.flaskHeal * P.mods.flask); sfx.drink(); updateFlasks();
 }
 function tryInteract() {
-  if (G.awakening) return;
+  if (G.awakening || G.witchAwakening) return;
+  if (G.bossId === 'witch') {
+    if (G.inArena && !G.bossActive && !G.bossDead && near(witchStonePos, P.pos, 3.6)) touchWitchStone();
+    return;
+  }
   if (near(bonfirePos, P.pos, 3.2) && !G.inArena) { restAtBonfire(); return; }
   if (!G.inArena && near(new THREE.Vector3(0, 0, ARENA_R - 3.4), P.pos, 3.0)) { enterArena(); return; }
   if (G.inArena && !G.bossActive && !G.bossDead && near(stonePos, P.pos, 3.4)) { touchStone(); return; }
@@ -1974,46 +2862,47 @@ function inArc(from, facingYaw, to, range, arc) {
   return Math.abs(angDiff(want, facingYaw)) < arc;
 }
 function lockTargetValid() {
-  return G.bossActive && B.state !== 'dead' && B.state !== 'dormant' && bossK.group.visible;
+  const t = activeBoss();
+  return G.bossActive && t.state !== 'dead' && t.state !== 'dormant' && activeBossGroup().visible;
 }
 function setLock(on) {
   G.locked = !!on && lockTargetValid();
   lockHint.classList.toggle('hidden', !G.locked);
 }
-function lockOnActive() { return G.locked && lockTargetValid(); }
+function lockOnActive() { return lockTargetValid(); }
 function bossFacingYaw() {
-  const dx = B.pos.x - P.pos.x, dz = B.pos.z - P.pos.z;
+  const t = activeBoss();
+  const dx = t.pos.x - P.pos.x, dz = t.pos.z - P.pos.z;
   if (dx * dx + dz * dz < 1e-4) return P.yaw;
   return Math.atan2(dx, dz);
 }
 function resolveBossCollision() {
-  if (!bossK.group.visible || B.state === 'dead' || !G.bossActive) return;
-  const dx = P.pos.x - B.pos.x, dz = P.pos.z - B.pos.z;
+  const t = activeBoss(), grp = activeBossGroup();
+  if (!grp.visible || t.state === 'dead' || !G.bossActive) return;
+  const dx = P.pos.x - t.pos.x, dz = P.pos.z - t.pos.z;
   const d = Math.hypot(dx, dz);
-  const scaleF = bossK.group.scale.x / BOSS_BASE_SCALE;
-  const minD = 1.12 * scaleF + 0.42;
+  const scaleF = activeBossScale();
+  const minD = (G.bossId === 'witch' ? 1.05 : 1.12) * scaleF + 0.42;
   if (d >= minD) return;
   let nx, nz;
   if (d < 1e-4) { const a = P.yaw + Math.PI; nx = Math.sin(a); nz = Math.cos(a); }
   else { nx = dx / d; nz = dz / d; }
-  P.pos.x = B.pos.x + nx * minD;
-  P.pos.z = B.pos.z + nz * minD;
-  if (G.inArena) {
-    const rr = Math.hypot(P.pos.x, P.pos.z);
-    if (rr > ARENA_R - 0.8) { P.pos.x *= (ARENA_R - 0.8) / rr; P.pos.z *= (ARENA_R - 0.8) / rr; }
-  }
+  P.pos.x = t.pos.x + nx * minD;
+  P.pos.z = t.pos.z + nz * minD;
+  if (G.inArena) clampToActiveArena(P.pos, 0.8);
   P.pos.y = 0;
 }
 function resolveStoneCollision() {
   if (!G.inArena) return;
-  const dx = P.pos.x - stonePos.x, dz = P.pos.z - stonePos.z;
-  const d = Math.hypot(dx, dz), minD = 1.15;
+  const s = activeStonePos();
+  const dx = P.pos.x - s.x, dz = P.pos.z - s.z;
+  const d = Math.hypot(dx, dz), minD = G.bossId === 'witch' ? 1.75 : 1.15;
   if (d >= minD) return;
   let nx, nz;
   if (d < 1e-4) { nx = 0; nz = 1; }
   else { nx = dx / d; nz = dz / d; }
-  P.pos.x = stonePos.x + nx * minD;
-  P.pos.z = stonePos.z + nz * minD;
+  P.pos.x = s.x + nx * minD;
+  P.pos.z = s.z + nz * minD;
 }
 
 // ============ DAMAGE ============
@@ -2061,6 +2950,35 @@ function damageBoss(dmg, poiseDmg = 32) {
     spawnPillarBarrage(1 + G.ng * 0.25, 10, false);
   }
   if (B.hp <= 0) bossDie();
+}
+function damageWitch(dmg, poiseDmg = 26) {
+  if (!G.bossActive || W.state === 'dead' || W.state === 'rage' || G.mode !== 'play') return;
+  dmg *= P.mods.dmg;
+  W.hp = Math.max(0, W.hp - dmg);
+  W.staggerAcc += poiseDmg;
+  sfx.hitFlesh(); G.shake = Math.min(0.5, G.shake + 0.16); G.hitstop = 0.05;
+  spawnSparks(new THREE.Vector3(W.pos.x, 1.8, W.pos.z), 12, 0xc9a0ff, 6);
+  if (W.staggerAcc >= 130 && W.state !== 'stagger' && W.hp > 0) {
+    W.state = 'stagger'; W.t = 0; W.staggerAcc = 0; W.attackKind = '';
+    telegraphEl.classList.add('hidden'); G.hitstop = 0.1;
+    showSub('THE HEX STAGGERS — STRIKE NOW!');
+    sfx.stagger();
+  }
+  if (!W.phase2 && W.hp < W.maxHP * 0.5 && W.hp > 0) {
+    W.phase2 = true; W.state = 'rage'; W.t = 0; W.specialCd = 2; W.staggerAcc = 0; W.volleyCount = 0;
+    G.hitstop = 0.12;
+    showCenter('THE VEIL TEARS', 'the Nightshade Hex is unbound');
+    bossNameEl.textContent = 'MORGANA  ·  THE VEIL UNBOUND';
+    intensifyBossMusic();
+    sfx.roar(); spawnRing(W.pos, 0x9b5cff, 13);
+    spawnHexWave(W.pos.x, W.pos.z, Math.round(TUNE.witchDmg.wave * (1 + G.ng * 0.25)), 14, WITCH_R, 0xd54aff);
+    spawnSparks(new THREE.Vector3(W.pos.x, 2.2, W.pos.z), 46, 0x9b5cff, 8);
+  }
+  if (W.hp <= 0) witchDie();
+}
+function dealDamageToActiveBoss(dmg, poiseDmg) {
+  if (G.bossId === 'witch') damageWitch(dmg, poiseDmg);
+  else damageBoss(dmg, poiseDmg);
 }
 
 // ============ FLOW ============
@@ -2154,22 +3072,69 @@ function updateAwakening(dt) {
     sfx.roar(); G.shake = Math.max(G.shake, 0.6);
   }
 }
+function touchWitchStone() {
+  if (!G.inArena || G.bossActive || G.bossDead || G.witchAwakening) return;
+  G.witchAwakening = true; G.witchAwakeT = 0;
+  setLock(false);
+  P.state = 'idle'; P.t = 0;
+  P.yaw = Math.atan2(witchStonePos.x - P.pos.x, witchStonePos.z - P.pos.z);
+  spawnSparks(new THREE.Vector3(witchStonePos.x, 2.2, witchStonePos.z), 24, 0xd9b7ff, 4);
+  spawnRing(new THREE.Vector3(witchStonePos.x, 0, witchStonePos.z), 0x9b5cff, 5);
+  sfx.cast(); G.shake = Math.max(G.shake, 0.14);
+  showCenter('THE NIGHTSHADE CRYSTAL', 'the veil answers your touch');
+}
+function updateWitchAwakening(dt) {
+  G.witchAwakeT += dt;
+  const T = G.witchAwakeT;
+  P.t += dt;
+  if (witchCrystal) {
+    const k = Math.min(1, T / 0.9);
+    witchCrystal.rotation.y += dt * (3 + k * 14);
+    witchCrystalMat.emissiveIntensity = 2.6 + k * 4.5;
+    witchCrystalGlow.material.opacity = 0.42 + k * 0.4;
+    witchCrystalGlow.scale.setScalar(4.4 + k * 3.0);
+    witchLight.intensity = 46 + k * 34;
+  }
+  if (T < 1.1 && Math.random() < 0.6) {
+    spawnSparks(new THREE.Vector3(
+      witchStonePos.x + (Math.random() - 0.5) * 1.8,
+      0.6 + Math.random() * 2.4,
+      witchStonePos.z + (Math.random() - 0.5) * 1.8
+    ), 1, Math.random() < 0.5 ? 0x9b5cff : 0xd9b7ff, 2.6);
+  }
+  if (T >= 1.15) {
+    G.witchAwakening = false;
+    spawnRing(new THREE.Vector3(witchStonePos.x, 0, witchStonePos.z), 0xd54aff, 9);
+    spawnSparks(new THREE.Vector3(witchStonePos.x, 2.3, witchStonePos.z), 52, 0xd9b7ff, 8);
+    sfx.pillar(); G.shake = Math.max(G.shake, 0.45);
+    beginWitch();
+  }
+}
 function playerDie() {
   P.state = 'dead'; P.t = 0; G.mode = 'dead'; sfx.death();
   stopBossMusic();
   clearBossHazards();
+  clearHexHazards();
   telegraphEl.classList.add('hidden');
   setTimeout(() => deathScreen.classList.remove('hidden'), 900);
   setTimeout(() => {
     deathScreen.classList.add('hidden');
-    G.inArena = false; fogGate.material.opacity = 0.55;
-    resetBoss(); resetPlayer(); updateFlasks();
-    G.mode = 'play';
-    showCenter('YOU WAKE AT THE BONFIRE', 'the fog awaits again — he believes in you');
+    if (G.bossId === 'witch') {
+      resetWitch(); G.inArena = true;
+      resetPlayer();
+      P.pos.set(WITCH_CENTER.x, 0, WITCH_CENTER.z + 8); P.yaw = Math.PI;
+      updateFlasks(); G.mode = 'play';
+      showCenter('YOU WAKE AT THE VEIL', 'touch the nightshade crystal to call her back');
+    } else {
+      G.inArena = false; fogGate.material.opacity = 0.55;
+      resetBoss(); resetPlayer(); updateFlasks();
+      G.mode = 'play';
+      showCenter('YOU WAKE AT THE BONFIRE', 'the fog awaits again — he believes in you');
+    }
   }, 3400);
 }
 function bossDie() {
-  B.state = 'dead'; B.t = 0; G.bossDead = true; G.bossActive = false;
+  B.state = 'dead'; B.t = 0; G.bossDead = true; G.bossActive = false; G.defeated.duncan = true;
   stopBossMusic();
   setLock(false);
   clearBossHazards();
@@ -2178,8 +3143,22 @@ function bossDie() {
   G.drops = rollDrops();
   setTimeout(showDropScreen, 1500);
 }
+function witchDie() {
+  W.state = 'dead'; W.t = 0; W.deadT = 0; G.bossDead = true; G.bossActive = false; G.defeated.witch = true;
+  stopBossMusic();
+  setLock(false);
+  clearHexHazards();
+  telegraphEl.classList.add('hidden');
+  sfx.victory();
+  spawnSparks(new THREE.Vector3(W.pos.x, 1.5, W.pos.z), 44, 0xd9b7ff, 7);
+  spawnRing(W.pos, 0x9b5cff, 11);
+  G.drops = rollDrops();
+  setTimeout(showDropScreen, 1500);
+}
 function showDropScreen() {
   if (G.mode !== 'play') return;
+  const titleEl = $('drop-title');
+  if (titleEl) titleEl.textContent = G.bossId === 'witch' ? 'MORGANA HAS FALLEN' : 'SER DUNCAN HAS FALLEN';
   const list = $('drop-list'); list.innerHTML = '';
   for (const d of G.drops) {
     const rc = RARITY[d.rarity];
@@ -2211,25 +3190,183 @@ function claimDrops() {
 }
 function showVictory() {
   G.mode = 'victory';
+  const isWitch = G.bossId === 'witch';
   const mins = Math.floor(G.fightTime / 60), secs = Math.floor(G.fightTime % 60);
   victoryStats.innerHTML = `Time <b>${mins}:${String(secs).padStart(2, '0')}</b> · NG+<b>${G.ng}</b><br>Estus left <b>${P.flasks}</b> · HP <b>${Math.ceil(P.hp)}/${P.maxHP}</b>`;
+  $('victory-title').textContent = isWitch ? 'THE HOLLOW FALLS SILENT' : 'THE VIGIL ENDS';
+  $('victory-tip').textContent = isWitch
+    ? 'New Game+ : her hexes bite 25% harder. How deep will you walk the veil?'
+    : 'New Game+ : he hits 25% harder each victory. How high can you go?';
+  $('btn-again').textContent = isWitch ? '↻  FACE HER AGAIN  ↻' : '↻  FACE HIM AGAIN  ↻';
+  buildVictorySwitch();
   victoryScreen.classList.remove('hidden');
 }
+function renderBossSwitchCards(host, onPick) {
+  if (!host) return;
+  host.innerHTML = '';
+  for (const def of Object.values(BOSSES)) {
+    const current = def.id === G.bossId;
+    const felled = !!G.defeated[def.id];
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'vs-card' + (felled ? ' defeated' : '') + (current ? ' current' : '');
+    card.style.setProperty('--accent', def.accent);
+    card.disabled = current;
+    card.innerHTML = '<span class="vs-glyph">' + def.glyph + '</span>' +
+      '<span class="vs-name">' + def.name + '</span>' +
+      '<span class="vs-epithet">' + def.epithet + '</span>' +
+      '<span class="vs-state">' + (current ? 'THIS VIGIL · ' + (felled ? 'FELLED' : 'UNBROKEN') : felled ? 'FELLED · RETURN' : 'HUNT ›') + '</span>';
+    if (!current) card.onclick = () => onPick(def.id);
+    host.appendChild(card);
+  }
+  const locked = document.createElement('div');
+  locked.className = 'vs-card locked';
+  locked.innerHTML = '<span class="vs-glyph">✧</span>' +
+    '<span class="vs-name">UNKNOWN VIGIL</span>' +
+    '<span class="vs-epithet">A CHALLENGER AWAITS</span>' +
+    '<span class="vs-state">SEALED</span>';
+  host.appendChild(locked);
+}
+function buildVictorySwitch() {
+  renderBossSwitchCards($('victory-boss-list'), switchBossFromVictory);
+}
+function travelToWorld(id, source) {
+  if (!BOSSES[id] || id === G.bossId) return;
+  if (source === 'victory') {
+    victoryScreen.classList.add('hidden');
+    dropScreenEl.classList.add('hidden');
+  } else {
+    closeVigilMenu();
+  }
+  stopBossMusic();
+  chooseBoss(id);
+  showCenter(id === 'witch' ? 'THE NIGHTSHADE HOLLOW' : 'THE ASHEN RING', id === 'witch' ? 'a violet forest beyond the veil' : 'the old meadow, far from the hollow');
+}
+function switchBossFromVictory(id) { travelToWorld(id, 'victory'); }
+function switchBossFromVigil(id) { travelToWorld(id, 'vigil'); }
+function anyVigilFelled() { return Object.values(G.defeated).some(Boolean); }
+function toggleVigilMenu() {
+  if (!vigilMenuEl) return;
+  if (!vigilMenuEl.classList.contains('hidden')) { closeVigilMenu(); return; }
+  if (G.mode !== 'play') return;
+  if (!anyVigilFelled()) { showSub('DEFEAT A VIGIL TO UNLOCK THE CROSSROADS'); return; }
+  if (G.bossActive) { showSub('THE DUEL IS NOT DONE'); return; }
+  if (!inventoryEl.classList.contains('hidden')) closeInventory();
+  renderBossSwitchCards(vigilBossListEl, switchBossFromVigil);
+  vigilMenuEl.classList.remove('hidden');
+  G.paused = true;
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+function closeVigilMenu() {
+  if (!vigilMenuEl) return;
+  vigilMenuEl.classList.add('hidden');
+  if (G.mode === 'play') G.paused = false;
+}
+
+// ============ ARENA SELECTION ============
+function enterBossArena(id) {
+  const def = BOSSES[id]; if (!def) return;
+  ARENA = def.arena; G.bossId = id;
+  witchArenaGroup.visible = id === 'witch';
+  witchWorldGroup.visible = id === 'witch';
+  applyWorldStyle(id);
+  G.awakening = false; G.bossRevealed = false; G.bossRevealY = 0;
+  G.witchAwakening = false; G.witchAwakeT = 0;
+  G.bossActive = false; G.bossDead = false; G.fightTime = 0; G.paused = false;
+  G.inArena = true; G.locked = false; lockHint.classList.add('hidden');
+  clearBossHazards(); clearHexHazards();
+  resetBoss(); resetWitch(); resetPlayer();
+  P.yaw = Math.PI; G.camYaw = 0; G.camPitch = 0.32;
+  bossPlate.classList.add('hidden');
+  setBossName(id);
+  if (id === 'witch') {
+    P.pos.set(WITCH_CENTER.x, 0, WITCH_CENTER.z + 8); P.yaw = Math.PI;
+    fogGate.material.opacity = 0.1;
+  } else {
+    P.pos.set(0, 0, 8); P.yaw = Math.PI;
+    fogGate.material.opacity = 0.1;
+  }
+  camTarget.set(P.pos.x + Math.sin(G.camYaw) * G.camDist, 2.4, P.pos.z + Math.cos(G.camYaw) * G.camDist);
+  camLook.set(P.pos.x, 1.7, P.pos.z);
+  flashWorldSwap();
+}
+function chooseBoss(id) {
+  const def = BOSSES[id]; if (!def) return;
+  audio(); startMusic();
+  titleScreen.style.display = 'none'; hud.classList.remove('hidden');
+  enterBossArena(id);
+  updateFlasks(); updateWeaponLabel();
+  G.mode = 'play';
+  if (id === 'witch') showCenter('MORGANA', 'the Nightshade Hex awaits — touch the crystal to summon her');
+  else showCenter('THE ASHEN RING', 'approach the ashen stone and press E to wake the knight');
+}
+function beginWitch() {
+  if (G.bossId !== 'witch' || G.mode !== 'play') return;
+  ARENA = ARENAS.witch;
+  W.maxHP = TUNE.witchHP + G.ng * 140;
+  W.hp = W.maxHP; W.state = 'intro'; W.t = 0; W.attackKind = ''; W.hasHit = false;
+  W.phase2 = false; W.specialCd = 0; W.staggerAcc = 0; W.volleyCount = 0;
+  W.pos.set(WITCH_CENTER.x, 0, WITCH_CENTER.z - 4); W.yaw = Math.PI;
+  witchK.group.visible = true; witchShadow.visible = true;
+  witchK.group.scale.setScalar(WITCH_BASE_SCALE);
+  G.bossActive = true; G.fightTime = 0; G.bossDead = false;
+  bossPlate.classList.remove('hidden');
+  setBossName('witch');
+  startBossMusic(); setLock(true);
+  sfx.roar(); G.shake = Math.max(G.shake, 0.5);
+  spawnRing(W.pos, 0x9b5cff, 9);
+  spawnSparks(new THREE.Vector3(W.pos.x, 1.4, W.pos.z), 42, 0x9b5cff, 7);
+  showCenter('MORGANA', 'the veil stirs — do not let her finish a word');
+}
+function buildBossSelect() {
+  const host = $('boss-select'); if (!host) return;
+  host.innerHTML = '';
+  for (const def of Object.values(BOSSES)) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'boss-card';
+    card.id = 'boss-card-' + def.id;
+    card.style.setProperty('--accent', def.accent);
+    card.innerHTML = '<span class="boss-glyph">' + def.glyph + '</span>' +
+      '<span class="boss-card-name">' + def.name + '</span>' +
+      '<span class="boss-card-epithet">' + def.epithet + '</span>' +
+      '<span class="boss-card-desc">' + def.desc + '</span>' +
+      '<span class="boss-diff">' + def.difficulty + '</span>' +
+      '<span class="boss-enter">STEP THROUGH THE FOG ›</span>';
+    card.onclick = () => chooseBoss(def.id);
+    host.appendChild(card);
+  }
+  for (let i = 0; i < 2; i++) {
+    const card = document.createElement('div');
+    card.className = 'boss-card locked';
+    card.innerHTML = '<span class="boss-glyph">✧</span>' +
+      '<span class="boss-card-name">UNKNOWN VIGIL</span>' +
+      '<span class="boss-card-epithet">A CHALLENGER AWAITS</span>' +
+      '<span class="boss-card-desc">An empty throne in the hollow. New bosses can be bound to this slot.</span>' +
+      '<span class="boss-diff">SEALED</span>' +
+      '<span class="boss-enter">FORGE A NEW BOSS ›</span>';
+    host.appendChild(card);
+  }
+}
+buildBossSelect();
+
 $('btn-claim').onclick = () => claimDrops();
 $('btn-erase').onclick = () => eraseSave();
 addEventListener('beforeunload', () => saveGame(true));
 $('btn-again').onclick = () => {  victoryScreen.classList.add('hidden');
   stopBossMusic();
-  G.ng++; G.bossDead = false; G.inArena = false; G.fightTime = 0;
-  fogGate.material.opacity = 0.55; resetBoss(); resetPlayer(); updateFlasks();
-  G.mode = 'play'; saveGame();
-  showCenter('NEW VIGIL — NG+' + G.ng, 'he strikes 25% harder. Honour him.');
-};
-$('btn-begin').onclick = () => {
-  audio(); startMusic();
-  titleScreen.style.display = 'none'; hud.classList.remove('hidden');
-  G.mode = 'play'; updateFlasks();
-  showCenter('FIND THE BONFIRE', saveRestored ? 'progress restored · rest (E), then step through the fog (E)' : 'rest (E), then step through the fog (E)');
+  if (G.bossId === 'witch') {
+    G.ng++; G.bossDead = false; G.fightTime = 0; G.mode = 'play';
+    resetWitch(); resetPlayer(); G.inArena = true;
+    P.pos.set(WITCH_CENTER.x, 0, WITCH_CENTER.z + 8); P.yaw = Math.PI;
+    updateFlasks(); saveGame();
+    showCenter('NEW VIGIL — NG+' + G.ng, 'her hexes bite 25% harder. Touch the crystal to call her.');
+  } else {
+    G.ng++; G.bossDead = false; G.inArena = false; G.fightTime = 0;
+    fogGate.material.opacity = 0.55; resetBoss(); resetPlayer(); updateFlasks();
+    G.mode = 'play'; saveGame();
+    showCenter('NEW VIGIL — NG+' + G.ng, 'he strikes 25% harder. Honour him.');
+  }
 };
 
 // ============ BOSS AI ============
@@ -2289,6 +3426,156 @@ function bossDoHit(kind) {
   }
 }
 
+// ============ WITCH AI ============
+const WITCH_CAST = {
+  bolt: { wind: 0.55, recover: 0.9 },
+  wave: { wind: 0.8, recover: 1.1 },
+  curse: { wind: 0.72, recover: 1.2 },
+  blink: { wind: 0.42, recover: 1.0 },
+  storm: { wind: 1.0, recover: 1.55 },
+};
+function witchDecide() {
+  const d = dist2D(W.pos, P.pos);
+  const opts = [];
+  if (d < 5.5) opts.push('blink', 'wave', 'bolt', 'blink');
+  else opts.push('bolt', 'curse', 'bolt', 'wave');
+  if (W.phase2) opts.push('storm', 'curse', 'bolt', 'wave');
+  if (W.specialCd <= 0) opts.push(W.phase2 ? 'storm' : 'curse');
+  const pick = opts[Math.random() * opts.length | 0];
+  W.attackKind = pick; W.state = 'windup'; W.t = 0; W.hasHit = false;
+  W.specialCd = pick === 'storm' ? 7.0 : pick === 'curse' ? 4.5 : pick === 'blink' ? 2.2 : 2.8;
+  sfx.swing();
+  telegraphEl.classList.remove('hidden');
+}
+function witchCast(kind) {
+  const mult = 1 + G.ng * 0.25;
+  W.volleyCount = (W.volleyCount || 0) + 1;
+  telegraphEl.classList.add('hidden');
+  if (kind === 'bolt') {
+    spawnHexBoltVolley(W.phase2 ? 6 : 4, 0.16, 10.5, Math.round(TUNE.witchDmg.bolt * mult));
+    showSub('HEXFIRE SEEKS YOU');
+  } else if (kind === 'wave') {
+    spawnHexWave(W.pos.x, W.pos.z, Math.round(TUNE.witchDmg.wave * mult), 10.5, WITCH_R, 0x9b5cff);
+    sfx.pillar(); G.shake = Math.max(G.shake, 0.25);
+    showSub('THE VEIL LASHES OUT — ROLL THROUGH IT');
+  } else if (kind === 'curse') {
+    const n = W.phase2 ? 9 : 6;
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, r = 1.2 + Math.random() * 5.2;
+      let x = P.pos.x + Math.cos(a) * r, z = P.pos.z + Math.sin(a) * r;
+      const dx = x - WITCH_CENTER.x, dz = z - WITCH_CENTER.z, dd = Math.hypot(dx, dz);
+      if (dd > WITCH_R - 2.2) { x = WITCH_CENTER.x + dx / dd * (WITCH_R - 2.2); z = WITCH_CENTER.z + dz / dd * (WITCH_R - 2.2); }
+      spawnHexPillar(x, z, 1.0 + Math.random() * 0.7, 1.75, TUNE.witchDmg.curse, mult);
+    }
+    sfx.cast();
+    showSub('THE GROUND REMEMBERS HER CURSE — KEEP MOVING');
+  } else if (kind === 'blink') {
+    const old = W.pos.clone();
+    const a = Math.random() * Math.PI * 2, r = 3.0 + Math.random() * 1.4;
+    let x = P.pos.x + Math.sin(a) * r, z = P.pos.z + Math.cos(a) * r;
+    const dx = x - WITCH_CENTER.x, dz = z - WITCH_CENTER.z, dd = Math.hypot(dx, dz);
+    if (dd > WITCH_R - 2.4) { x = WITCH_CENTER.x + dx / dd * (WITCH_R - 2.4); z = WITCH_CENTER.z + dz / dd * (WITCH_R - 2.4); }
+    spawnSparks(new THREE.Vector3(old.x, 1.2, old.z), 26, 0x9b5cff, 5);
+    spawnRing(old, 0x9b5cff, 4);
+    W.pos.set(x, 0, z);
+    W.yaw = Math.atan2(P.pos.x - x, P.pos.z - z);
+    spawnSparks(new THREE.Vector3(x, 1.2, z), 26, 0xd9b7ff, 5);
+    spawnRing(W.pos, 0xd54aff, 4.5);
+    spawnHexWave(x, z, Math.round(TUNE.witchDmg.blink * mult), 11, 4.5, 0xd54aff);
+    sfx.cast(); G.shake = Math.max(G.shake, 0.2);
+    showSub('SHE STEPS THROUGH THE VEIL — BEHIND YOU');
+  } else if (kind === 'storm') {
+    spawnHexBoltVolley(9, 0.13, 12, Math.round(TUNE.witchDmg.storm * mult));
+    for (let i = 0; i < 8; i++) {
+      const a = Math.random() * Math.PI * 2, r = 2 + Math.random() * 8;
+      spawnHexPillar(P.pos.x + Math.cos(a) * r, P.pos.z + Math.sin(a) * r, 1.1 + Math.random() * 0.9, 1.8, TUNE.witchDmg.curse, mult);
+    }
+    spawnHexWave(W.pos.x, W.pos.z, Math.round(TUNE.witchDmg.wave * mult), 9, WITCH_R, 0xd54aff);
+    sfx.roar(); G.shake = Math.max(G.shake, 0.4);
+    showSub('THE VEIL RAINS HEXFIRE');
+  }
+}
+function updateWitch(dt) {
+  W.t += dt;
+  W.specialCd = Math.max(0, W.specialCd - dt);
+  const d = dist2D(W.pos, P.pos);
+  const toP = Math.atan2(P.pos.x - W.pos.x, P.pos.z - W.pos.z);
+  const turn = W.phase2 ? 3.6 : 2.8;
+  switch (W.state) {
+    case 'dormant': {
+      W.yaw += angDiff(toP, W.yaw) * Math.min(1, dt);
+      break;
+    }
+    case 'intro': {
+      W.yaw += angDiff(toP, W.yaw) * Math.min(1, 2 * dt);
+      if (W.t > 1.6) { W.state = 'idle'; W.decideCd = 0.9; }
+      break;
+    }
+    case 'idle': {
+      W.yaw += angDiff(toP, W.yaw) * Math.min(1, turn * dt);
+      const speed = TUNE.witchSpeed * (W.phase2 ? 1.25 : 1) * (1 + G.ng * 0.08);
+      let mx = 0, mz = 0;
+      if (d < 6.5) { mx = (W.pos.x - P.pos.x) / Math.max(d, 0.001); mz = (W.pos.z - P.pos.z) / Math.max(d, 0.001); }
+      else if (d > 11.5) { mx = (P.pos.x - W.pos.x) / Math.max(d, 0.001); mz = (P.pos.z - W.pos.z) / Math.max(d, 0.001); }
+      else { mx = Math.cos(W.t * 0.7) * 0.5; mz = Math.sin(W.t * 0.7) * 0.5; }
+      W.pos.x += mx * speed * dt; W.pos.z += mz * speed * dt;
+      clampToActiveArena(W.pos, 1.6);
+      const cd = Math.hypot(W.pos.x - WITCH_CENTER.x, W.pos.z - WITCH_CENTER.z);
+      if (cd < 2.4) {
+        const px = W.pos.x - WITCH_CENTER.x, pz = W.pos.z - WITCH_CENTER.z;
+        W.pos.x = WITCH_CENTER.x + px / Math.max(cd, 0.001) * 2.4;
+        W.pos.z = WITCH_CENTER.z + pz / Math.max(cd, 0.001) * 2.4;
+      }
+      W.decideCd -= dt;
+      if (W.decideCd <= 0 && P.state !== 'dead') witchDecide();
+      break;
+    }
+    case 'windup': {
+      W.yaw += angDiff(toP, W.yaw) * Math.min(1, 1.6 * dt);
+      const c = WITCH_CAST[W.attackKind] || WITCH_CAST.bolt;
+      if (W.t >= c.wind) {
+        witchCast(W.attackKind);
+        W.state = 'recover'; W.t = 0;
+      }
+      break;
+    }
+    case 'recover': {
+      W.yaw += angDiff(toP, W.yaw) * Math.min(1, 1.2 * dt);
+      const c = WITCH_CAST[W.attackKind] || WITCH_CAST.bolt;
+      if (W.t >= c.recover) {
+        if (W.volleyCount >= 3) {
+          W.state = 'rest'; W.t = 0; W.volleyCount = 0;
+          telegraphEl.classList.add('hidden');
+          showSub('THE HEX FALTERS — SHE MUST RECOVER');
+        } else {
+          W.state = 'idle'; W.decideCd = 0.95 + Math.random() * 0.75;
+        }
+      }
+      break;
+    }
+    case 'rest': {
+      W.yaw += angDiff(toP, W.yaw) * Math.min(1, 0.7 * dt);
+      if (W.t > 3.0) { W.state = 'idle'; W.decideCd = 0.7 + Math.random() * 0.45; }
+      break;
+    }
+    case 'rage': {
+      W.yaw += angDiff(toP, W.yaw) * Math.min(1, 1.4 * dt);
+      if (W.t > 1.25) { W.state = 'idle'; W.decideCd = 0.6; }
+      break;
+    }
+    case 'stagger': {
+      if (W.t > 1.15) { W.state = 'idle'; W.decideCd = 0.25; }
+      break;
+    }
+    case 'dead': {
+      W.deadT += dt;
+      if (W.deadT > 2.4) { witchK.group.visible = false; witchShadow.visible = false; }
+      break;
+    }
+  }
+  if (G.bossActive && P.state !== 'dead') G.fightTime += dt;
+}
+
 // ============ UPDATE: PLAYER ============
 function updatePlayer(dt) {
   P.t += dt; P.hurtT = Math.max(0, P.hurtT - dt);
@@ -2322,7 +3609,7 @@ function updatePlayer(dt) {
       P.yaw += angDiff(want, P.yaw) * Math.min(1, 6 * dt);
       P.pos.addScaledVector(forwardOf(P.yaw), 2.2 * wpn.spd * dt);
       if (!P.hasHit && P.t >= hitA && P.t <= hitB) {
-        if (inArc(P.pos, P.yaw, B.pos, 3.1 * wpn.reach, 1.0)) { P.hasHit = true; damageBoss(TUNE.lightDmg[P.combo] * wpn.dmg, Math.round(30 * wpn.dmg)); }
+        if (inArc(P.pos, P.yaw, activeBoss().pos, 3.1 * wpn.reach, 1.0)) { P.hasHit = true; dealDamageToActiveBoss(TUNE.lightDmg[P.combo] * wpn.dmg, Math.round(30 * wpn.dmg)); }
       }
       if (P.t > 0.3 * wpn.spd && P.comboQueued && P.combo < 2) {
         const c = TUNE.lightST[P.combo + 1] * wpn.st;
@@ -2337,7 +3624,7 @@ function updatePlayer(dt) {
       P.yaw += (lockOnActive() ? angDiff(bossFacingYaw(), P.yaw) : 0) * Math.min(1, 4 * dt);
       if (P.t > 0.3 * wpn.spd) P.pos.addScaledVector(forwardOf(P.yaw), 2.6 * wpn.spd * dt);
       if (!P.hasHit && P.t >= 0.42 * wpn.spd && P.t <= 0.62 * wpn.spd) {
-        if (inArc(P.pos, P.yaw, B.pos, 3.3 * wpn.reach, 0.9)) { P.hasHit = true; damageBoss(TUNE.heavyDmg * wpn.dmg, Math.round(42 * wpn.dmg)); }
+        if (inArc(P.pos, P.yaw, activeBoss().pos, 3.3 * wpn.reach, 0.9)) { P.hasHit = true; dealDamageToActiveBoss(TUNE.heavyDmg * wpn.dmg, Math.round(42 * wpn.dmg)); }
       }
       if (P.t >= dur) P.state = 'idle';
       break;
@@ -2361,10 +3648,8 @@ function updatePlayer(dt) {
     case 'dead': break;
   }
   // clamp to world
-  const maxR = G.inArena ? ARENA_R - 0.8 : 34;
-  const d = Math.hypot(P.pos.x, P.pos.z);
-  if (G.inArena && d > maxR) { P.pos.x *= maxR / d; P.pos.z *= maxR / d; }
-  else if (!G.inArena) { P.pos.x = Math.max(-8, Math.min(8, P.pos.x)); P.pos.z = Math.max(10, Math.min(30, P.pos.z)); }
+  if (G.inArena) clampToActiveArena(P.pos, 0.8);
+  else { P.pos.x = Math.max(-8, Math.min(8, P.pos.x)); P.pos.z = Math.max(10, Math.min(30, P.pos.z)); }
   P.pos.y = 0;
 }
 
@@ -2680,12 +3965,99 @@ function poseKnight(K, o, dt) {
   p.visor.material.emissiveIntensity = o.enrage ? 2.2 + Math.sin(time * 10) * 0.8 : 0.65;
 }
 
+// ============ WITCH POSE ============
+function poseWitch(dt) {
+  const time = performance.now() * 0.001;
+  const p = witchK.parts;
+  let hover = 0.035 + Math.sin(time * 1.55) * 0.012;
+  let rX = -0.24 + Math.sin(time * 1.2) * 0.045, rZ = -0.16;
+  let lX = -0.24 + Math.sin(time * 1.1 + 1) * 0.045, lZ = 0.16;
+  let rEl = -0.30 + Math.sin(time * 0.9 + 2) * 0.04;
+  let lEl = -0.24 + Math.sin(time * 0.85) * 0.04;
+  let headX = Math.sin(time * 0.9) * 0.04, headY = Math.sin(time * 0.6) * 0.08;
+  let rootZ = Math.sin(time * 0.7) * 0.018;
+  let restK = 0;
+  if (W.state === 'windup') {
+    const c = WITCH_CAST[W.attackKind] || WITCH_CAST.bolt;
+    const k = sstep(clampJ(W.t / c.wind, 0, 1));
+    rX = -0.24 - k * 1.75; rZ = -0.16 - k * 0.35; rEl = -0.30 - k * 0.5;
+    lX = -0.24 - k * 0.5; lZ = 0.16 + k * 0.45; lEl = -0.24 - k * 0.45;
+    headX = -k * 0.2; headY = -k * 0.1; hover += k * 0.2;
+  } else if (W.state === 'recover') {
+    const c = WITCH_CAST[W.attackKind] || WITCH_CAST.bolt;
+    const k = clampJ(W.t / c.recover, 0, 1);
+    rX = -2.0 + k * 1.75; rZ = -0.5 + k * 0.3; rEl = -0.8 + k * 0.45;
+    lX = -0.9 + k * 0.6; lZ = 0.7 - k * 0.5; lEl = -0.7 + k * 0.4;
+    headX = -0.2 + k * 0.2;
+  } else if (W.state === 'rest') {
+    restK = sstep(clampJ(W.t / 0.6, 0, 1));
+    rX = -0.24 + restK * 0.15; rZ = -0.16 + restK * 0.2;
+    lX = -0.24 + restK * 0.12; lZ = 0.16 - restK * 0.08;
+    rEl = -0.30 - restK * 0.55; lEl = -0.24 - restK * 0.32;
+    headX = restK * 0.12 + Math.sin(time * 1.1) * 0.02;
+    headY = Math.sin(time * 0.4) * 0.05;
+    hover = 0.035 + Math.sin(time * 1.2) * 0.008 - restK * 0.012;
+  } else if (W.state === 'rage') {
+    const k = sstep(clampJ(W.t / 1.2, 0, 1));
+    rX = -1.4 - Math.sin(W.t * 18) * 0.1; rZ = -1.0; lX = -1.4; lZ = 1.0;
+    rEl = -0.15; lEl = -0.15;
+    headX = -0.35; hover += 0.35 * Math.sin(k * Math.PI);
+  } else if (W.state === 'stagger') {
+    rootZ = 0.18; headX = 0.35;
+    rX = -0.5; lX = -0.5; rZ = 0.1; lZ = -0.1;
+    rEl = -0.6; lEl = -0.6;
+  } else if (W.state === 'dead') {
+    hover = Math.max(0.01, 0.035 - W.deadT * 0.01);
+    rootZ = Math.min(1.15, W.deadT * 0.9);
+    headX = Math.min(0.6, W.deadT * 0.5);
+    rX = -0.2; lX = -0.2;
+  }
+  p.root.position.y = hover;
+  p.root.rotation.z = rootZ;
+  p.head.rotation.x = headX; p.head.rotation.y = headY;
+  p.armR.rotation.set(rX, 0, rZ);
+  p.armL.rotation.set(lX, 0, lZ);
+  if (p.elbowR) p.elbowR.rotation.x = rEl;
+  if (p.elbowL) p.elbowL.rotation.x = lEl;
+  // slow breathing in the shoulders and a rare blink
+  const breath = Math.sin(time * 1.35);
+  if (p.shoulders) p.shoulders.scale.y = 0.52 + breath * 0.006;
+  const blink = Math.pow(Math.max(0, Math.sin(time * 0.63 + 2.4)), 50);
+  for (const eye of p.eyes) eye.scale.y = 1 - blink * 0.92;
+  for (const h of p.hairStrands) {
+    const u = h.userData;
+    h.rotation.z = Math.sin(time * 1.15 + u.phase) * 0.025 + restK * 0.02;
+    h.rotation.x = Math.sin(time * 0.85 + u.phase * 1.3) * 0.02;
+  }
+  p.orbs.rotation.y += dt * 0.9;
+  p.orbs.rotation.x = Math.sin(time * 0.55) * 0.12;
+  p.crown.rotation.y += dt * 0.35;
+  p.staffCrystal.rotation.y += dt * 2.2;
+  const dim = 1 - restK * 0.62;
+  const pulse = (2.8 + Math.sin(time * 3.4) * 0.8 + (W.phase2 ? 1.2 : 0)) * dim;
+  p.staffCrystal.material.emissiveIntensity = pulse;
+  p.staffGlow.material.opacity = (0.42 + Math.sin(time * 2.8) * 0.12 + (W.phase2 ? 0.1 : 0)) * dim;
+  p.staffLight.intensity = (8 + Math.sin(time * 3.4) * 2.5 + (W.phase2 ? 3 : 0)) * dim;
+  p.aura.material.opacity = (0.22 + Math.sin(time * 1.7) * 0.06 + (W.phase2 ? 0.08 : 0)) * (1 - restK * 0.35);
+  p.robe.scale.x = 1 + Math.sin(time * 1.3) * 0.012;
+  p.robe.scale.z = 1 + Math.cos(time * 1.15) * 0.012;
+  witchK.group.position.copy(W.pos);
+  witchK.group.position.y = W.pos.y || 0;
+  witchK.group.rotation.y = W.yaw;
+}
+
 // ============ CAMERA ============
 const camTarget = new THREE.Vector3();
 const camLook = new THREE.Vector3(0, 1.7, 28);
 const _camWant = new THREE.Vector3(), _camAim = new THREE.Vector3(), _camLookTarget = new THREE.Vector3();
 function updateCamera(dt) {
-  if (G.awakening) {
+  if (G.witchAwakening) {
+    const cx = Math.sin(G.camYaw) * Math.cos(G.camPitch), cz = Math.cos(G.camYaw) * Math.cos(G.camPitch);
+    _camWant.set(P.pos.x + cx * G.camDist, 1.6 + Math.sin(G.camPitch) * G.camDist, P.pos.z + cz * G.camDist);
+    camTarget.lerp(_camWant, 1 - Math.exp(-7 * dt));
+    const k = Math.min(1, G.witchAwakeT / 0.6);
+    camLook.lerp(_camLookTarget.set(witchStonePos.x, 2.35, witchStonePos.z), 1 - Math.exp(-(3 + k * 4) * dt));
+  } else if (G.awakening && G.bossId === 'duncan') {
     if (G.awakeT < 1.15) {
       _camWant.set(2.8, 2.25, 3.8);
       camLook.lerp(_camLookTarget.set(stonePos.x, 1.5, stonePos.z), 1 - Math.exp(-5 * dt));
@@ -2696,35 +4068,43 @@ function updateCamera(dt) {
     }
     camTarget.lerp(_camWant, 1 - Math.exp(-3.4 * dt));
   } else if (lockOnActive()) {
-    const dx = P.pos.x - B.pos.x, dz = P.pos.z - B.pos.z;
+    const tgt = activeBoss();
+    const dx = P.pos.x - tgt.pos.x, dz = P.pos.z - tgt.pos.z;
     const len = Math.hypot(dx, dz);
     let bx, bz;
     if (len < 0.001) { bx = -Math.sin(P.yaw); bz = -Math.cos(P.yaw); }
     else { bx = dx / len; bz = dz / len; }
-    const d = dist2D(P.pos, B.pos);
-    const scaleF = bossK.group.scale.x / BOSS_BASE_SCALE;
+    const d = dist2D(P.pos, tgt.pos);
+    const scaleF = activeBossScale();
     const dist = 2.7 + Math.min(2.2, d * 0.16);
     _camWant.set(P.pos.x + bx * dist, 2.15 + Math.min(0.9, d * 0.08), P.pos.z + bz * dist);
     // never let the camera slip inside the boss
-    const vx = _camWant.x - B.pos.x, vz = _camWant.z - B.pos.z;
+    const vx = _camWant.x - tgt.pos.x, vz = _camWant.z - tgt.pos.z;
     const vd = Math.hypot(vx, vz), minCam = 1.9 * scaleF;
     if (vd < minCam) {
       const ax = vd < 0.001 ? bx : vx / vd, az = vd < 0.001 ? bz : vz / vd;
-      _camWant.x = B.pos.x + ax * minCam; _camWant.z = B.pos.z + az * minCam;
+      _camWant.x = tgt.pos.x + ax * minCam; _camWant.z = tgt.pos.z + az * minCam;
     }
-    const rr = Math.hypot(_camWant.x, _camWant.z);
-    if (G.inArena && rr > ARENA_R + 1) { const f = (ARENA_R + 1) / rr; _camWant.x *= f; _camWant.z *= f; }
+    const c = ARENA.center, limit = ARENA.radius + 1;
+    const rr = Math.hypot(_camWant.x - c.x, _camWant.z - c.z);
+    if (G.inArena && rr > limit) {
+      const f = limit / rr;
+      _camWant.x = c.x + (_camWant.x - c.x) * f;
+      _camWant.z = c.z + (_camWant.z - c.z) * f;
+    }
     _camWant.y = Math.max(1.2, _camWant.y);
     camTarget.lerp(_camWant, 1 - Math.exp(-7 * dt));
-    camLook.lerp(_camAim.set(B.pos.x, 2.05 * scaleF, B.pos.z), 1 - Math.exp(-10 * dt));
+    camLook.lerp(_camAim.set(tgt.pos.x, activeBossAimY(), tgt.pos.z), 1 - Math.exp(-10 * dt));
   } else {
     const cx = Math.sin(G.camYaw) * Math.cos(G.camPitch), cz = Math.cos(G.camYaw) * Math.cos(G.camPitch);
     _camWant.set(P.pos.x + cx * G.camDist, 1.6 + Math.sin(G.camPitch) * G.camDist, P.pos.z + cz * G.camDist);
     // keep camera out of walls
-    const dd = Math.hypot(_camWant.x, _camWant.z);
-    if (G.inArena && dd > ARENA_R + 1) {
-      const f = (ARENA_R + 1) / dd;
-      _camWant.x *= f; _camWant.z *= f;
+    const c = ARENA.center, limit = ARENA.radius + 1;
+    const dd = Math.hypot(_camWant.x - c.x, _camWant.z - c.z);
+    if (G.inArena && dd > limit) {
+      const f = limit / dd;
+      _camWant.x = c.x + (_camWant.x - c.x) * f;
+      _camWant.z = c.z + (_camWant.z - c.z) * f;
       _camWant.y = 1.6 + (_camWant.y - 1.6) * f;
     }
     _camWant.y = Math.max(1.0, _camWant.y);
@@ -2751,7 +4131,8 @@ function updateHUD() {
   hpShown += (hpk - hpShown) * 0.06; hpGhost.style.width = (Math.max(hpk, hpShown) * 100) + '%';
   stFill.style.width = (P.st / P.stMax * 100) + '%';
   stFill.style.background = P.st < 22 ? '#c0392b' : '';
-  const bk = B.hp / B.maxHP;
+  const bossNow = activeBoss();
+  const bk = bossNow.hp / bossNow.maxHP;
   bossFill.style.width = (bk * 100) + '%';
   bossShown += (bk - bossShown) * 0.04; bossGhost.style.width = (Math.max(bk, bossShown) * 100) + '%';
   vignette.classList.toggle('lowhp', hpk < 0.3);
@@ -2764,8 +4145,13 @@ function updateHUD() {
       spoilsSlotEl.textContent = '—';
     }
   }
+  const tracking = lockOnActive() && G.mode === 'play';
+  lockHint.classList.toggle('hidden', !tracking);
   // interact prompt
-  if (G.mode === 'play' && !G.awakening) {
+  if (G.mode === 'play' && !G.awakening && !G.witchAwakening && G.bossId === 'witch') {
+    if (G.inArena && !G.bossActive && !G.bossDead && near(witchStonePos, P.pos, 3.6)) { interactPrompt.classList.remove('hidden'); interactText.textContent = 'to touch the nightshade crystal'; }
+    else interactPrompt.classList.add('hidden');
+  } else if (G.mode === 'play' && !G.awakening && !G.witchAwakening && G.bossId === 'duncan') {
     if (!G.inArena && near(bonfirePos, P.pos, 3.2)) { interactPrompt.classList.remove('hidden'); interactText.textContent = 'to rest at the bonfire'; }
     else if (!G.inArena && near(new THREE.Vector3(0, 0, ARENA_R - 3.4), P.pos, 3.0)) { interactPrompt.classList.remove('hidden'); interactText.textContent = 'to face Ser Duncan'; }
     else if (G.inArena && !G.bossActive && !G.bossDead && near(stonePos, P.pos, 3.4)) { interactPrompt.classList.remove('hidden'); interactText.textContent = 'to touch the ashen stone'; }
@@ -2821,6 +4207,7 @@ function renderWeaponList() {
 }
 function toggleInventory() {
   if (inventoryEl.classList.contains('hidden')) {
+    if (!vigilMenuEl.classList.contains('hidden')) closeVigilMenu();
     inventoryEl.classList.remove('hidden');
     G.paused = true;
     if (document.pointerLockElement) document.exitPointerLock();
@@ -2874,6 +4261,15 @@ function loop() {
     core.scale.set(u.w * 1.35 * (1 + Math.sin(t * 12.7 + u.seed) * 0.08), u.h * 0.95 * k, 1);
     core.position.x = Math.sin(t * 1.8 + u.seed * 1.3) * u.w * 0.06;
   }
+  for (const f of witchFlames) {
+    const u = f.userData; if (!u.sprites) continue;
+    const [outer, core] = u.sprites;
+    const k = 1 + Math.sin(t * 9 + u.seed) * 0.12 + Math.sin(t * 21 + u.seed * 1.7) * 0.05;
+    outer.scale.set(u.w * 2.9 * (1 + Math.sin(t * 6.7 + u.seed) * 0.07), u.h * 1.5 * k, 1);
+    outer.position.x = Math.sin(t * 1.2 + u.seed) * u.w * 0.11;
+    core.scale.set(u.w * 1.35 * (1 + Math.sin(t * 11.7 + u.seed) * 0.09), u.h * 0.95 * k, 1);
+    core.position.x = Math.sin(t * 1.6 + u.seed * 1.3) * u.w * 0.07;
+  }
   for (const s of smokeSprites) {
     s.position.y += dt * 0.22;
     s.position.x += Math.sin(t * 0.5 + s.userData.phase) * dt * s.userData.drift;
@@ -2887,16 +4283,36 @@ function loop() {
     m.position.z = Math.sin(m.userData.a) * m.userData.r;
     m.position.y = m.userData.y + Math.sin(t * 0.35 + m.userData.phase) * 0.22;
   }
+  if (witchWorldGroup.visible) {
+    for (const m of witchMotes) {
+      const u = m.userData;
+      u.a += dt * u.speed;
+      m.position.x = WITCH_CENTER.x + Math.cos(u.a) * u.rr;
+      m.position.z = WITCH_CENTER.z + Math.sin(u.a) * u.rr;
+      m.position.y = u.y + Math.sin(t * 0.8 + u.bob) * 0.5;
+      m.material.opacity = 0.35 + Math.sin(t * 2.1 + u.bob) * 0.2;
+    }
+  }
   if (!G.awakening && altarGem.visible) {
     altarGem.rotation.y = t * 1.1;
     altarGem.position.y = 1.52 + Math.sin(t * 1.8) * 0.04;
     altarGlow.material.opacity = 0.52 + Math.sin(t * 3.2) * 0.12;
     altarLight.intensity = 12 + Math.sin(t * 4.1) * 3;
   }
+  if (witchCrystal && !G.witchAwakening) {
+    witchCrystal.rotation.y = t * 0.8;
+    witchCrystal.position.y = 2.35 + Math.sin(t * 1.6) * 0.08;
+    witchCrystalMat.emissiveIntensity = 2.4 + Math.sin(t * 3.6) * 0.7 + (W.phase2 ? 1.4 : 0);
+    witchCrystalGlow.material.opacity = 0.42 + Math.sin(t * 2.9) * 0.12;
+    witchCrystalGlow.scale.setScalar(4.2 + Math.sin(t * 2.2) * 0.5);
+    witchLight.intensity = 38 + Math.sin(t * 4.2) * 7;
+  }
   fogGate.material.opacity = (G.inArena ? 0.1 : 0.5) + Math.sin(t * 1.7) * 0.06;
-  warm.intensity = 24 + Math.sin(t * 9) * 4;
+  warm.intensity = G.bossId === 'witch' ? 0 : 24 + Math.sin(t * 9) * 4;
   // embers
-  if (Math.random() < 0.25) spawnSparks(new THREE.Vector3((Math.random()-0.5)*20, 0.5, (Math.random()-0.5)*20 + 6), 1, Math.random() < 0.5 ? 0xff8c3a : 0x555566, 1.2);
+  if (G.bossId === 'witch') {
+    if (Math.random() < 0.32) spawnSparks(new THREE.Vector3(WITCH_CENTER.x + (Math.random() - 0.5) * 24, 0.5, WITCH_CENTER.z + (Math.random() - 0.5) * 24), 1, Math.random() < 0.5 ? 0x9b5cff : 0xd9b7ff, 1.2);
+  } else if (Math.random() < 0.25) spawnSparks(new THREE.Vector3((Math.random()-0.5)*20, 0.5, (Math.random()-0.5)*20 + 6), 1, Math.random() < 0.5 ? 0xff8c3a : 0x555566, 1.2);
   updateSparks(dt);
   for (let i = rings.length - 1; i >= 0; i--) {
     const m = rings[i]; m.userData.r += dt * 14;
@@ -2907,26 +4323,38 @@ function loop() {
   if (G.mode === 'play' && !G.paused) {
     if (G.awakening) {
       updateAwakening(dt);
+    } else if (G.witchAwakening) {
+      updateWitchAwakening(dt);
     } else {
       updatePlayer(dt);
       resolveStoneCollision();
       resolveBossCollision();
     }
-    if (!G.awakening && (G.bossActive || B.state === 'dormant')) updateBoss(dt);
-    if (!G.awakening) { resolveStoneCollision(); resolveBossCollision(); }
-    updatePillars(dt);
+    const interacting = G.awakening || G.witchAwakening;
+    if (!interacting && G.bossId === 'duncan' && (G.bossActive || B.state === 'dormant')) updateBoss(dt);
+    if (!interacting && G.bossId === 'witch') updateWitch(dt);
+    if (!interacting) { resolveStoneCollision(); resolveBossCollision(); }
+    if (G.bossId === 'witch') { updateHexBolts(dt); updateHexPillars(dt); updateHexWaves(dt); }
+    else updatePillars(dt);
   }
   // poses
   const pMoving = ['run'].includes(P.state) || (['idle'].includes(P.state) && moveVec().lengthSq() > 0.01);
   poseKnight(playerK, { moving: pMoving, sprint: !!keys.ShiftLeft, state: P.state, t: P.t, combo: P.combo, pos: P.pos, yaw: P.yaw }, dt);
   const bMoving = ['chase'].includes(B.state);
   poseKnight(bossK, { moving: bMoving, sprint: false, bossStep: true, state: B.state, t: B.t, kind: B.attackKind, pos: B.pos, yaw: B.yaw, yOffset: G.awakening ? G.bossRevealY : 0, enrage: B.phase2 }, dt);
+  poseWitch(dt);
   const clothNormals = (frameNo % 3) === 0;
   animateCloth(playerK.parts.cape, t, clothNormals); animateCloth(playerK.parts.cape2, t * 1.07, clothNormals);
   animateCloth(bossK.parts.cape, t * 0.9, clothNormals); animateCloth(bossK.parts.cape2, t * 0.97, clothNormals);
+  if (witchK.group.visible) {
+    const panels = witchK.parts.skirtPanels;
+    for (let i = 0; i < panels.length; i++) animateCloth(panels[i], t * 0.85 + i * 0.17, clothNormals);
+  }
   playerShadow.position.set(P.pos.x, 0.025, P.pos.z);
   bossShadow.position.set(B.pos.x, 0.025, B.pos.z);
   bossShadow.visible = bossK.group.visible && B.state !== 'dead';
+  witchShadow.position.set(W.pos.x, 0.025, W.pos.z);
+  witchShadow.visible = G.bossId === 'witch' && witchK.group.visible && W.state !== 'dead';
   updateCamera(dt);
   if ((hudTick++ % 3) === 0) updateHUD();
   gradePass.uniforms.uTime.value = t;
@@ -2938,14 +4366,13 @@ updateWeaponLabel();
 loop();
 
 // expose for automated checks
-window.__game = { G, P, B, TUNE, WEAPONS, SPOILS, RARITY, DROP_POOL, enterArena, touchStone, updateAwakening, stonePos, restAtBonfire, damageBoss, damagePlayer, equipWeapon, toggleInventory, equipSpoils, unequipSpoils, rollDrops, claimDrops, showDropScreen, spawnPillarBarrage, clearBossHazards, pillars, saveGame, loadGame, eraseSave };
-window.__scene = { scene, camera, renderer, moon, composer, playerShadow, bossShadow, THREE };
+window.__game = { G, P, B, W, TUNE, WEAPONS, SPOILS, RARITY, DROP_POOL, ARENAS, BOSSES, chooseBoss, enterBossArena, beginWitch, resetWitch, enterArena, touchStone, updateAwakening, touchWitchStone, updateWitchAwakening, stonePos, witchStonePos, restAtBonfire, damageBoss, damageWitch, damagePlayer, equipWeapon, toggleInventory, equipSpoils, unequipSpoils, rollDrops, claimDrops, showDropScreen, spawnPillarBarrage, clearBossHazards, clearHexHazards, pillars, hexPillars, hexBolts, hexWaves, saveGame, loadGame, eraseSave, applyWorldStyle, switchBossFromVictory, switchBossFromVigil, toggleVigilMenu, closeVigilMenu, anyVigilFelled, witchWorldGroup };
+window.__scene = { scene, camera, renderer, moon, composer, playerShadow, bossShadow, witchK, witchShadow, witchWorldGroup, witchArenaGroup, THREE };
 
 
-if (location.hash === '#bosstest') {
+if (location.hash === '#bosstest' || location.hash === '#witchtest') {
   setTimeout(() => {
-    document.getElementById('btn-begin').click();
-    G.inArena = true; touchStone();
+    chooseBoss(location.hash === '#witchtest' ? 'witch' : 'duncan');
   }, 300);
   setTimeout(() => {
     const m = bossMusic;
