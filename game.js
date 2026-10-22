@@ -32,7 +32,7 @@ const TUNE = {
   bossHP: 1450, bossDmg: { slash: 42, slash2: 46, slam: 64, ring: 38, thrust: 50, jump: 60, bash: 26, pillar: 48, fireball: 34, firewave: 44, meteor: 62 },
   bossSpeed: 3.7, bossRun: 6.3, bossTurn: 3.2, recovery: 1.12,
   witchHP: 1320, witchDmg: { bolt: 34, wave: 42, curse: 52, blink: 46, storm: 30, beam: 50, skeleton: 18, moonzone: 46 }, witchSpeed: 3.2,
-  dragonHP: 1680, dragonDmg: { bite: 46, tail: 54, breath: 40, storm: 48, stomp: 58, lunge: 52 }, dragonSpeed: 3.0,
+  dragonHP: 1680, dragonDmg: { bite: 46, tail: 54, breath: 38, dive: 55, wing: 32 }, dragonSpeed: 3.0,
 };
 
 // ============ AUDIO (procedural, no files) ============
@@ -629,7 +629,7 @@ const WITCH_R = 16;
 const WITCH_CENTER = new THREE.Vector3(0, 0, -82);
 const DRAGON_R = 17;
 const DRAGON_CENTER = new THREE.Vector3(0, 0, -168);
-const DRAGON_BASE_SCALE = 0.92;
+const DRAGON_BASE_SCALE = 0.74;
 const grassTex = canvasTex(512, (x, s) => {
   x.fillStyle = '#4c5733'; x.fillRect(0, 0, s, s);
   // broad damp/dry patches break up the tiling
@@ -3797,7 +3797,7 @@ const G = {
   inArena: false, bossActive: false, bossDead: false,
   defeated: { duncan: false, witch: false, dragon: false },
   locked: false, ng: 0, fightTime: 0, hitstop: 0, paused: false,
-  camYaw: 0, camPitch: 0.32, camDist: 6.5,
+  camYaw: 0, camPitch: 0.22, camDist: 6.5,
   shake: 0,
   awakening: false, awakeT: 0, awakeBurst: false, bossRevealed: false, bossRevealY: 0,
   witchAwakening: false, witchAwakeT: 0,
@@ -3853,7 +3853,7 @@ function activeBossScale() {
 }
 function activeBossAimY() {
   if (G.bossId === 'witch') return 2.05;
-  if (G.bossId === 'dragon') return 3.6;
+  if (G.bossId === 'dragon') return 2.55;
   return 2.05 * activeBossScale();
 }
 function setBossName(id) {
@@ -3970,18 +3970,21 @@ const W = {
   phase2: false, lunarPhase: false, specialCd: 0, summonCd: 0, beamCd: 0, staggerAcc: 0, deadT: 0, volleyCount: 0,
 };
 let dragonBreathWarn = null, dragonBreathWarnMat = null;
+let dragonDiveWarn = null, dragonDiveWarnMat = null;
+const dragonDiveMark = new THREE.Vector3();
 const V = {
   pos: new THREE.Vector3(DRAGON_CENTER.x, 0, DRAGON_CENTER.z - 5), yaw: Math.PI, hp: TUNE.dragonHP, maxHP: TUNE.dragonHP,
   state: 'dormant', t: 0, decideCd: 0, attackKind: '', hasHit: false,
-  phase2: false, staggerAcc: 0, deadT: 0, breathCd: 0, stormCd: 0, roarCd: 0, animT: 0,
+  phase2: false, staggerAcc: 0, deadT: 0, breathCd: 0, stormCd: 0, roarCd: 0, animT: 0, lastAttack: '',
 };
 function resetDragon() {
   V.maxHP = TUNE.dragonHP + G.ng * 170;
   V.hp = V.maxHP; V.pos.set(DRAGON_CENTER.x, 0, DRAGON_CENTER.z - 5); V.yaw = Math.PI;
   V.state = 'dormant'; V.t = 0; V.decideCd = 0; V.attackKind = ''; V.hasHit = false;
-  V.phase2 = false; V.staggerAcc = 0; V.deadT = 0; V.breathCd = 0; V.stormCd = 0; V.roarCd = 0;
+  V.phase2 = false; V.staggerAcc = 0; V.deadT = 0; V.breathCd = 0; V.stormCd = 0; V.roarCd = 0; V.lastAttack = '';
   clearBossHazards();
   hideDragonBreathWarn();
+  hideDragonDiveWarn();
   dragonK.group.position.copy(V.pos); dragonK.group.rotation.y = V.yaw;
   dragonK.group.scale.setScalar(DRAGON_BASE_SCALE);
   dragonK.parts.root.position.set(0, 0, 0);
@@ -4166,7 +4169,7 @@ function resolveBossCollision() {
   const dx = P.pos.x - t.pos.x, dz = P.pos.z - t.pos.z;
   const d = Math.hypot(dx, dz);
   const scaleF = activeBossScale();
-  const minD = (G.bossId === 'witch' ? 1.05 : G.bossId === 'dragon' ? 2.5 : 1.12) * scaleF + 0.42;
+  const minD = (G.bossId === 'witch' ? 1.05 : G.bossId === 'dragon' ? 2.2 : 1.12) * scaleF + 0.42;
   if (d >= minD) return;
   let nx, nz;
   if (d < 1e-4) { const a = P.yaw + Math.PI; nx = Math.sin(a); nz = Math.cos(a); }
@@ -4404,7 +4407,7 @@ function playerDie() {
   stopBossMusic();
   clearBossHazards();
   clearHexHazards();
-  hideDragonBreathWarn();
+  hideDragonBreathWarn(); hideDragonDiveWarn();
   telegraphEl.classList.add('hidden');
   setTimeout(() => deathScreen.classList.remove('hidden'), 900);
   setTimeout(() => {
@@ -4580,7 +4583,7 @@ function enterBossArena(id) {
   G.inArena = true; G.locked = false; lockHint.classList.add('hidden');
   clearBossHazards(); clearHexHazards();
   resetBoss(); resetWitch(); resetDragon(); resetPlayer();
-  P.yaw = Math.PI; G.camYaw = 0; G.camPitch = 0.32;
+  P.yaw = Math.PI; G.camYaw = 0; G.camPitch = 0.22;
   bossPlate.classList.add('hidden');
   setBossName(id);
   if (id === 'witch') {
@@ -4975,7 +4978,9 @@ function updatePlayer(dt) {
       if (!P.hasHit && P.t >= hitA && P.t <= hitB) {
         let struck = false;
         const dmg = TUNE.lightDmg[P.combo] * wpn.dmg;
-        if (inArc(P.pos, P.yaw, activeBoss().pos, 3.1 * wpn.reach, 1.0)) { dealDamageToActiveBoss(dmg, Math.round(30 * wpn.dmg)); struck = true; }
+        const bossReach = G.bossId === 'dragon' ? 1.5 : 1.0;
+        const bossArc = G.bossId === 'dragon' ? 0.22 : 0;
+        if (inArc(P.pos, P.yaw, activeBoss().pos, 3.1 * wpn.reach * bossReach, 1.0 + bossArc)) { dealDamageToActiveBoss(dmg, Math.round(30 * wpn.dmg)); struck = true; }
         if (damageSkeletonsInArc(P.pos, P.yaw, 3.1 * wpn.reach, 1.0, dmg)) struck = true;
         if (struck) P.hasHit = true;
       }
@@ -4994,7 +4999,9 @@ function updatePlayer(dt) {
       if (!P.hasHit && P.t >= 0.42 * wpn.spd && P.t <= 0.62 * wpn.spd) {
         let struck = false;
         const dmg = TUNE.heavyDmg * wpn.dmg;
-        if (inArc(P.pos, P.yaw, activeBoss().pos, 3.3 * wpn.reach, 0.9)) { dealDamageToActiveBoss(dmg, Math.round(42 * wpn.dmg)); struck = true; }
+        const bossReach = G.bossId === 'dragon' ? 1.5 : 1.0;
+        const bossArc = G.bossId === 'dragon' ? 0.22 : 0;
+        if (inArc(P.pos, P.yaw, activeBoss().pos, 3.3 * wpn.reach * bossReach, 0.9 + bossArc)) { dealDamageToActiveBoss(dmg, Math.round(42 * wpn.dmg)); struck = true; }
         if (damageSkeletonsInArc(P.pos, P.yaw, 3.3 * wpn.reach, 0.9, dmg)) struck = true;
         if (struck) P.hasHit = true;
       }
@@ -5531,29 +5538,49 @@ function poseWitch(dt) {
 
 // ============ DRAGON AI & HAZARDS ============
 const DRAGON_CAST = {
-  bite:  { wind: 0.55, recover: 0.85 },
-  tail:  { wind: 0.78, recover: 1.0 },
-  breath:{ wind: 1.05, recover: 1.2 },
-  storm: { wind: 0.95, recover: 1.35 },
-  lunge: { wind: 0.62, recover: 0.95 },
-  stomp: { wind: 0.8, recover: 1.05 },
+  bite:  { wind: 0.9, recover: 1.05 },
+  tail:  { wind: 1.0, recover: 1.15 },
+  breath:{ wind: 1.25, recover: 1.35 },
+  dive:  { wind: 1.3, recover: 1.25 },
+  wing:  { wind: 1.0, recover: 1.15 },
 };
 function ensureDragonBreathWarn() {
   if (dragonBreathWarn) return dragonBreathWarn;
   const geo = new THREE.RingGeometry(2.2, 13.5, 26, 1, -Math.PI / 2 - 0.36, 0.72);
   dragonBreathWarnMat = new THREE.MeshBasicMaterial({
-    color: 0xff5a1e, transparent: true, opacity: 0.16, side: THREE.DoubleSide,
+    color: 0xffb052, transparent: true, opacity: 0.22, side: THREE.DoubleSide,
     depthWrite: false, blending: THREE.AdditiveBlending,
   });
   dragonBreathWarn = new THREE.Mesh(geo, dragonBreathWarnMat);
   dragonBreathWarn.rotation.x = -Math.PI / 2;
-  dragonBreathWarn.position.y = 0.05;
+  dragonBreathWarn.position.y = 0.09;
   dragonBreathWarn.visible = false;
   scene.add(dragonBreathWarn);
   return dragonBreathWarn;
 }
 function hideDragonBreathWarn() {
   if (dragonBreathWarn) dragonBreathWarn.visible = false;
+}
+function ensureDragonDiveWarn() {
+  if (dragonDiveWarn) return dragonDiveWarn;
+  dragonDiveWarnMat = new THREE.MeshBasicMaterial({
+    color: 0xffc861, transparent: true, opacity: 0.36, side: THREE.DoubleSide,
+    depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const grp = new THREE.Group();
+  const edge = new THREE.Mesh(new THREE.RingGeometry(3.75, 4.2, 48), dragonDiveWarnMat);
+  const core = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.95, 28), dragonDiveWarnMat);
+  edge.rotation.x = -Math.PI / 2;
+  core.rotation.x = -Math.PI / 2;
+  grp.add(edge, core);
+  grp.position.y = 0.07;
+  grp.visible = false;
+  scene.add(grp);
+  dragonDiveWarn = grp;
+  return grp;
+}
+function hideDragonDiveWarn() {
+  if (dragonDiveWarn) dragonDiveWarn.visible = false;
 }
 function beginDragon() {
   if (G.bossId !== 'dragon' || G.mode !== 'play' || G.bossActive || G.bossDead) return;
@@ -5563,10 +5590,11 @@ function beginDragon() {
   V.pos.set(DRAGON_CENTER.x, 0, DRAGON_CENTER.z - 5);
   V.yaw = Math.atan2(P.pos.x - V.pos.x, P.pos.z - V.pos.z);
   V.state = 'intro'; V.t = 0; V.decideCd = 0.8; V.attackKind = ''; V.hasHit = false;
-  V.phase2 = false; V.staggerAcc = 0; V.deadT = 0; V.breathCd = 0; V.stormCd = 0;
+  V.phase2 = false; V.staggerAcc = 0; V.deadT = 0; V.breathCd = 0; V.stormCd = 0; V.lastAttack = '';
   dragonK.group.position.copy(V.pos); dragonK.group.rotation.y = V.yaw;
   dragonK.group.scale.setScalar(DRAGON_BASE_SCALE);
   dragonK.group.visible = true; dragonShadow.visible = true;
+  hideDragonBreathWarn(); hideDragonDiveWarn();
   G.bossActive = true; G.bossDead = false; G.fightTime = 0;
   bossPlate.classList.remove('hidden'); setBossName('dragon'); startBossMusic(); setLock(true);
   sfx.roar(); G.shake = Math.max(G.shake, 0.8);
@@ -5585,31 +5613,43 @@ function touchDragonStone() {
   beginDragon();
 }
 function dragonDecide() {
+  hideDragonBreathWarn(); hideDragonDiveWarn();
   const d = dist2D(V.pos, P.pos);
   const opts = [];
-  if (d < 7.2) opts.push('bite', 'bite', 'tail', 'stomp');
-  else if (d < 12.5) opts.push('breath', 'lunge', 'storm', 'breath');
-  else opts.push('breath', 'storm', 'lunge');
-  if (V.phase2) opts.push('breath', 'storm');
-  const kind = opts[Math.floor(Math.random() * opts.length)];
+  if (d < 7.0) opts.push('bite', 'bite', 'tail', 'wing');
+  else if (d < 12.5) opts.push('breath', 'dive', 'breath', 'dive');
+  else opts.push('dive', 'breath', 'dive');
+  if (V.phase2) opts.push('breath', 'dive');
+  let kind = opts[Math.floor(Math.random() * opts.length)];
+  if (kind === V.lastAttack && opts.length > 2) {
+    const alt = opts.filter(o => o !== kind);
+    kind = alt[Math.floor(Math.random() * alt.length)];
+  }
+  V.lastAttack = kind;
   V.attackKind = kind; V.state = 'windup'; V.t = 0; V.hasHit = false;
   const say = {
     bite: 'JAWS LIKE A CAVE-IN',
-    tail: 'THE TAIL WHIPS THE CALDERA',
-    breath: 'HEATH-FIRE BUILDS — LEAVE THE CONE',
-    storm: 'THE SKY BURNS — KEEP MOVING',
-    lunge: 'HE CROSSES THE RING',
-    stomp: 'THE FLOOR SPLITS',
+    tail: 'THE TAIL SWEEPS — ROLL CLEAR',
+    breath: 'CALDERA-FIRE BUILDS — LEAVE THE CONE',
+    dive: 'HE TAKES WING — LEAVE THE MARK',
+    wing: 'THE WINGS GATHER — BACK AWAY',
   }[kind];
   if (say) showSub(say);
   if (kind === 'breath') {
     ensureDragonBreathWarn();
-    dragonBreathWarn.position.set(V.pos.x, 0.05, V.pos.z);
+    dragonBreathWarn.position.set(V.pos.x, 0.09, V.pos.z);
     dragonBreathWarn.rotation.z = V.yaw;
     dragonBreathWarn.visible = true;
-    dragonBreathWarnMat.opacity = 0.16;
+    dragonBreathWarnMat.opacity = 0.22;
     sfx.cast();
-  } else if (kind === 'storm') {
+  } else if (kind === 'dive') {
+    dragonDiveMark.copy(P.pos);
+    ensureDragonDiveWarn();
+    dragonDiveWarn.position.set(dragonDiveMark.x, 0.07, dragonDiveMark.z);
+    dragonDiveWarn.visible = true;
+    dragonDiveWarnMat.opacity = 0.36;
+    sfx.cast();
+  } else if (kind === 'wing') {
     sfx.cast();
   }
 }
@@ -5617,61 +5657,51 @@ function dragonStrike(kind) {
   const d = dist2D(V.pos, P.pos);
   const mult = 1 + G.ng * 0.18;
   if (kind === 'bite') {
-    if (d < 7.2 && inArc(V.pos, V.yaw, P.pos, 7.5, 1.2)) damagePlayer(Math.round(TUNE.dragonDmg.bite * mult), V.pos, 'bite');
-    spawnSparks(new THREE.Vector3(V.pos.x + Math.sin(V.yaw) * 3.4, 2.2, V.pos.z + Math.cos(V.yaw) * 3.4), 16, 0xffd27a, 6);
+    if (d < 6.2 && inArc(V.pos, V.yaw, P.pos, 6.4, 1.05)) damagePlayer(Math.round(TUNE.dragonDmg.bite * mult), V.pos, 'bite');
+    spawnSparks(new THREE.Vector3(V.pos.x + Math.sin(V.yaw) * 3.0, 2.0, V.pos.z + Math.cos(V.yaw) * 3.0), 16, 0xffd27a, 6);
     sfx.slam();
   } else if (kind === 'tail') {
-    if (d < 5.6) damagePlayer(Math.round(TUNE.dragonDmg.tail * mult), V.pos, 'tail');
-    spawnRing(V.pos, 0xff6a2a, 8);
+    if (d < 4.8) damagePlayer(Math.round(TUNE.dragonDmg.tail * mult), V.pos, 'tail');
+    spawnRing(V.pos, 0xff6a2a, 7.5);
     spawnSparks(new THREE.Vector3(V.pos.x, 1.0, V.pos.z), 24, 0xff8a3a, 8);
     G.shake = Math.max(G.shake, 0.5); sfx.slam();
   } else if (kind === 'breath') {
     hideDragonBreathWarn();
-    for (let ring = 0; ring < 4; ring++) {
-      const dist = 4.5 + ring * 2.4;
+    for (let ring = 0; ring < 3; ring++) {
+      const dist = 4.8 + ring * 2.5;
       for (let side = -1; side <= 1; side++) {
         const a = V.yaw + side * 0.2 * (dist / 6);
         const x = V.pos.x + Math.sin(a) * dist;
         const z = V.pos.z + Math.cos(a) * dist;
         if (Math.hypot(x - DRAGON_CENTER.x, z - DRAGON_CENTER.z) > DRAGON_R - 1.2) continue;
-        spawnFirePillar(x, z, 0.18 + ring * 0.08 + Math.abs(side) * 0.05, 1.75,
+        spawnFirePillar(x, z, 0.4 + ring * 0.18 + (side + 1) * 0.12, 1.2,
           Math.round(TUNE.dragonDmg.breath * mult), 1, false);
       }
     }
     spawnSparks(new THREE.Vector3(V.pos.x + Math.sin(V.yaw) * 3.0, 2.0, V.pos.z + Math.cos(V.yaw) * 3.0), 36, 0xff6a24, 9);
     sfx.roar(); G.shake = Math.max(G.shake, 0.55);
-  } else if (kind === 'storm') {
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2 + Math.random() * 0.35;
-      const r = i === 0 ? 0 : 2.6 + Math.random() * 4.4;
-      const x = P.pos.x + Math.sin(a) * r;
-      const z = P.pos.z + Math.cos(a) * r;
-      const dx = x - DRAGON_CENTER.x, dz = z - DRAGON_CENTER.z;
-      const dd = Math.hypot(dx, dz), lim = DRAGON_R - 1.6;
-      const px = dd > lim ? DRAGON_CENTER.x + dx / dd * lim : x;
-      const pz = dd > lim ? DRAGON_CENTER.z + dz / dd * lim : z;
-      spawnFirePillar(px, pz, 0.9 + i * 0.14, 2.25, Math.round(TUNE.dragonDmg.storm * mult), 1, true);
+  } else if (kind === 'dive') {
+    hideDragonDiveWarn();
+    const impactX = dragonDiveMark.x, impactZ = dragonDiveMark.z;
+    V.pos.set(impactX, 0, impactZ); clampToActiveArena(V.pos, 2.2);
+    spawnRing(V.pos, 0xff6a2a, 10);
+    spawnRing(V.pos, 0xffc861, 16);
+    spawnSparks(new THREE.Vector3(V.pos.x, 1.2, V.pos.z), 46, 0xff7a24, 8);
+    sfx.slam(); sfx.roar(); G.shake = Math.max(G.shake, 0.8);
+    if (Math.hypot(P.pos.x - impactX, P.pos.z - impactZ) < 4.2) {
+      damagePlayer(Math.round(TUNE.dragonDmg.dive * mult), V.pos, 'dive');
     }
-    sfx.roar(); sfx.pillarWarn();
-    G.shake = Math.max(G.shake, 0.6);
-  } else if (kind === 'lunge') {
-    const fwd = new THREE.Vector3(Math.sin(V.yaw), 0, Math.cos(V.yaw));
-    V.pos.addScaledVector(fwd, Math.min(7, Math.max(2.5, d - 2)));
-    clampToActiveArena(V.pos, 2.2);
-    spawnRing(V.pos, 0xff6a2a, 7);
-    spawnSparks(new THREE.Vector3(V.pos.x, 1.6, V.pos.z), 22, 0xff8a3a, 7);
-    sfx.slam(); G.shake = Math.max(G.shake, 0.6);
-    if (dist2D(V.pos, P.pos) < 3.4) damagePlayer(Math.round(TUNE.dragonDmg.lunge * mult), V.pos, 'lunge');
-  } else if (kind === 'stomp') {
-    spawnFireWave(V.pos.x, V.pos.z, Math.round(TUNE.dragonDmg.stomp * mult), 12, DRAGON_R + 1.0, 0xff5a1e);
-    spawnRing(V.pos, 0xff6a2a, 11);
-    spawnSparks(new THREE.Vector3(V.pos.x, 0.5, V.pos.z), 30, 0xff9a3a, 8);
-    sfx.slam(); G.shake = Math.max(G.shake, 0.7);
-    if (d < 4.6) damagePlayer(Math.round(TUNE.dragonDmg.stomp * mult), V.pos, 'stomp');
+  } else if (kind === 'wing') {
+    spawnRing(V.pos, 0xffc861, 9);
+    spawnRing(V.pos, 0xff5a1e, 6);
+    spawnSparks(new THREE.Vector3(V.pos.x, 1.8, V.pos.z), 34, 0xff9a3a, 8);
+    sfx.slam(); G.shake = Math.max(G.shake, 0.65);
+    if (d < 5.2) damagePlayer(Math.round(TUNE.dragonDmg.wing * mult), V.pos, 'wing');
   }
 }
 function spawnDragonStorm() {
-  dragonStrike('storm');
+  dragonDiveMark.copy(P.pos);
+  dragonStrike('dive');
 }
 function spawnDragonBreath() {
   dragonStrike('breath');
@@ -5682,7 +5712,11 @@ function updateDragon(dt) {
   if (G.bossActive && P.state !== 'dead') G.fightTime += dt;
   G.hazardsDirty = true;
   if (dragonBreathWarn && dragonBreathWarn.visible) {
-    dragonBreathWarnMat.opacity = 0.12 + Math.abs(Math.sin(V.t * 8)) * 0.14;
+    dragonBreathWarnMat.opacity = 0.2 + Math.abs(Math.sin(V.t * 8)) * 0.2;
+  }
+  if (dragonDiveWarn && dragonDiveWarn.visible) {
+    dragonDiveWarnMat.opacity = 0.28 + Math.abs(Math.sin(V.t * 9)) * 0.24;
+    dragonDiveWarn.scale.setScalar(1 + Math.sin(V.t * 9) * 0.025);
   }
   const d = dist2D(V.pos, P.pos);
   const toP = Math.atan2(P.pos.x - V.pos.x, P.pos.z - V.pos.z);
@@ -5702,7 +5736,7 @@ function updateDragon(dt) {
       V.decideCd = Math.max(0, V.decideCd - dt);
       if (P.state !== 'dead') {
         const spd = TUNE.dragonSpeed * (V.phase2 ? 1.18 : 1) * (1 + G.ng * 0.06);
-        const away = d < 6.6, toward = d > 11.5;
+        const away = d < 4.2, toward = d > 11.5;
         if (away || toward) {
           const dir = away ? -1 : 1;
           V.pos.x += Math.sin(V.yaw) * spd * dt * dir;
@@ -5724,14 +5758,14 @@ function updateDragon(dt) {
       if (V.t >= cast.wind) {
         dragonStrike(V.attackKind);
         V.state = 'recover'; V.t = 0; V.hasHit = true;
-        hideDragonBreathWarn(); telegraphEl.classList.add('hidden');
+        hideDragonBreathWarn(); hideDragonDiveWarn(); telegraphEl.classList.add('hidden');
       }
       break;
     }
     case 'recover': {
       V.yaw += angDiff(toP, V.yaw) * Math.min(1, 1.4 * dt);
       const cast = DRAGON_CAST[V.attackKind] || DRAGON_CAST.bite;
-      if (V.t >= cast.recover) { V.state = 'idle'; V.t = 0; V.decideCd = 0.25 + Math.random() * 0.5; }
+      if (V.t >= cast.recover) { V.state = 'idle'; V.t = 0; V.decideCd = (V.phase2 ? 0.4 : 0.6) + Math.random() * 0.5; }
       break;
     }
     case 'stagger':
@@ -5773,19 +5807,19 @@ function poseDragon(dt) {
       headPitch = -0.18 - k * 0.22; jawOpen = 0.25 + k * 0.55; mouth = 0.1 + k * 0.35;
     } else if (V.attackKind === 'tail') {
       tailYaw = -0.9 * k; rootTilt = -0.04 * k;
-    } else if (V.attackKind === 'storm') {
-      wing = 0.6 + k * 0.55 + Math.sin(time * 7) * 0.18; headPitch = -0.3; jawOpen = 0.5; mouth = 0.35;
-    } else if (V.attackKind === 'stomp') {
-      headPitch = 0.35 * k; legLift = k * 0.45; bob += k * 0.18;
-    } else if (V.attackKind === 'lunge') {
-      headPitch = -0.25 + k * 0.5; jawOpen = 0.15 + k * 0.35;
+    } else if (V.attackKind === 'dive') {
+      wing = 0.9 + Math.sin(time * 8) * 0.22; headPitch = -0.34; jawOpen = 0.55; mouth = 0.4;
+      bob += k * 0.5; legLift = k * 0.5;
+    } else if (V.attackKind === 'wing') {
+      wing = 0.35 + k * 0.8; headPitch = -0.2; jawOpen = 0.42; mouth = 0.25;
+      bob += k * 0.12;
     }
   } else if (st === 'recover') {
     const k = Math.min(1, V.t / ((DRAGON_CAST[V.attackKind] || DRAGON_CAST.bite).recover));
     if (V.attackKind === 'breath') { mouth = 1 - k; headPitch = 0.34 * (1 - k); jawOpen = 0.4 * (1 - k); }
-    else if (V.attackKind === 'lunge') { headPitch = 0.3 * (1 - k); }
+    else if (V.attackKind === 'dive') { headPitch = 0.42 * (1 - k); wing = 0.25 + 0.55 * (1 - k); legLift = 0.35 * (1 - k); }
     else if (V.attackKind === 'tail') { tailYaw = 0.6 * (1 - k); }
-    else if (V.attackKind === 'storm') { wing = 0.35 * (1 - k); }
+    else if (V.attackKind === 'wing') { wing = 1.15 * (1 - k); }
   } else if (st === 'stagger') {
     headPitch = 0.5; neckPitch = 0.15; jawOpen = 0.25;
     wing = -0.08; bob -= 0.18; rootTilt = 0.06;
@@ -5826,7 +5860,7 @@ function poseDragon(dt) {
   dragonK.group.rotation.y = V.yaw;
   dragonShadow.position.set(V.pos.x, 0.03, V.pos.z);
   dragonShadow.visible = dragonK.group.visible && V.state !== 'dead';
-  dragonShadow.scale.setScalar(1 + Math.sin(time * 1.6) * 0.03);
+  dragonShadow.scale.setScalar(DRAGON_BASE_SCALE * (1 + Math.sin(time * 1.6) * 0.03));
 }
 function damageDragon(dmg, poiseDmg = 30) {
   if (!G.bossActive || V.state === 'dead' || V.state === 'rage' || G.mode !== 'play') return;
@@ -5839,7 +5873,7 @@ function damageDragon(dmg, poiseDmg = 30) {
   G.hitstop = 0.035; G.shake = Math.min(0.5, G.shake + 0.16);
   if (!V.phase2 && V.hp < V.maxHP * 0.5) {
     V.phase2 = true; V.state = 'rage'; V.t = 0; V.staggerAcc = 0;
-    hideDragonBreathWarn(); telegraphEl.classList.add('hidden');
+    hideDragonBreathWarn(); hideDragonDiveWarn(); telegraphEl.classList.add('hidden');
     sfx.roar(); G.shake = Math.max(G.shake, 0.9); G.hitstop = 0.1;
     spawnRing(V.pos, 0xff5a1e, 12);
     spawnRing(V.pos, 0xffc861, 20);
@@ -5847,7 +5881,7 @@ function damageDragon(dmg, poiseDmg = 30) {
     showCenter('THE CALDERA AWAKENS', 'Vytles sheds the last of his patience');
   } else if (V.staggerAcc >= 160 && V.state !== 'stagger' && V.hp > 0) {
     V.staggerAcc = 0; V.state = 'stagger'; V.t = 0;
-    hideDragonBreathWarn(); telegraphEl.classList.add('hidden');
+    hideDragonBreathWarn(); hideDragonDiveWarn(); telegraphEl.classList.add('hidden');
     showSub('VYTLES STAGGERS — STRIKE NOW');
     sfx.stagger(); G.hitstop = 0.12;
   }
@@ -5859,7 +5893,7 @@ function dragonDie() {
   stopBossMusic();
   setLock(false);
   clearBossHazards();
-  hideDragonBreathWarn();
+  hideDragonBreathWarn(); hideDragonDiveWarn();
   telegraphEl.classList.add('hidden');
   sfx.death(); sfx.victory();
   spawnSparks(new THREE.Vector3(V.pos.x, 2.4, V.pos.z), 70, 0xff8a3a, 10);
@@ -5917,7 +5951,10 @@ function updateCamera(dt) {
     const d = dist2D(P.pos, tgt.pos);
     const scaleF = activeBossScale();
     const dist = 2.7 + Math.min(2.2, d * 0.16);
-    _camWant.set(P.pos.x + bx * dist, 2.15 + Math.min(0.9, d * 0.08), P.pos.z + bz * dist);
+    const camH = G.bossId === 'dragon'
+      ? 1.5 + Math.min(0.6, d * 0.055)
+      : 1.95 + Math.min(0.8, d * 0.075);
+    _camWant.set(P.pos.x + bx * dist, camH, P.pos.z + bz * dist);
     // never let the camera slip inside the boss
     const vx = _camWant.x - tgt.pos.x, vz = _camWant.z - tgt.pos.z;
     const vd = Math.hypot(vx, vz), minCam = 1.9 * scaleF;
