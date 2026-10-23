@@ -6223,8 +6223,8 @@ function updateHUD() {
   bossFill.style.width = (bk * 100) + '%';
   bossShown += (bk - bossShown) * 0.04; bossGhost.style.width = (Math.max(bk, bossShown) * 100) + '%';
   vignette.classList.toggle('lowhp', hpk < 0.3);
-  // equipped spoils display
-  if (spoilsSlotEl) {
+  // equipped spoils display (inventory renders its own interactive slot)
+  if (spoilsSlotEl && inventoryEl.classList.contains('hidden')) {
     if (P.equippedSpoils) {
       const s = ALL_SPOILS.find(x => x.id === P.equippedSpoils);
       spoilsSlotEl.textContent = s ? s.name + ' (' + s.rarity.toUpperCase() + ')' : '—';
@@ -6263,7 +6263,9 @@ function renderWeaponList() {
   const es = P.equippedSpoils ? ALL_SPOILS.find(x => x.id === P.equippedSpoils) : null;
   if (spoilsSlotEl) {
     if (es) {
-      spoilsSlotEl.innerHTML = '<span class="rarity-' + es.rarity + '">' + es.name + '</span> <span class="unequip-hint" onclick="unequipSpoils()">(unequip)</span>';
+      spoilsSlotEl.innerHTML = '<span class="rarity-' + es.rarity + '">' + es.name + '</span> <span class="unequip-hint">(unequip)</span>';
+      const un = spoilsSlotEl.querySelector('.unequip-hint');
+      if (un) un.onclick = () => unequipSpoils();
     } else {
       spoilsSlotEl.innerHTML = '<span class="none">— empty — <span class="hint">(click a spoil to equip)</span></span>';
     }
@@ -6290,10 +6292,13 @@ function renderWeaponList() {
     ? P.spoils.map(sid => {
       const s = ALL_SPOILS.find(x => x.id === sid);
       const eq = s && P.equippedSpoils === sid;
-      return '<div class="spoil rarity-' + s.rarity + (eq ? ' equipped' : '') + '" onclick="equipSpoils(\'' + sid + '\')">' + s.name + (eq ? ' <span class="eq-tag">EQUIPPED</span>' : '') + '</div>';
+      return '<div class="spoil rarity-' + s.rarity + (eq ? ' equipped' : '') + '" data-spoil="' + sid + '">' + s.name + (eq ? ' <span class="eq-tag">EQUIPPED</span>' : '') + '</div>';
     }).join('')
     : '<div class="spoil none">None yet — defeat Ser Duncan</div>';
   $('spoils-list').innerHTML = spoilsHtml;
+  $('spoils-list').querySelectorAll('.spoil[data-spoil]').forEach(el => {
+    el.onclick = () => equipSpoils(el.dataset.spoil);
+  });
 }
 function toggleInventory() {
   if (inventoryEl.classList.contains('hidden')) {
