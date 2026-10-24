@@ -20,7 +20,7 @@ const victoryScreen = $('victory-screen'), victoryStats = $('victory-stats');
 const vignette = $('vignette'), damageFlash = $('damage-flash'), lockHint = $('lock-hint');
 const telegraphEl = $('boss-telegraph'), muteBadge = $('mute-badge');
 const inventoryEl = $('inventory'), weaponListEl = $('weapon-list'), slotWeaponEl = $('slot-weapon'), invStatsEl = $('inv-stats'), weaponLabelEl = $('weapon-label');
-const dropScreenEl = $('drop-screen'), dropListEl = $('drop-list'), spoilsSlotEl = $('spoils-slot');
+const dropScreenEl = $('drop-screen'), dropListEl = $('drop-list'), spoilsSlotEl = $('spoils-slot'), spoilTipEl = $('spoil-tip');
 const vigilMenuEl = $('vigil-menu'), vigilBossListEl = $('vigil-boss-list');
 const worldFade = $('world-fade');
 
@@ -33,6 +33,7 @@ const TUNE = {
   bossSpeed: 3.7, bossRun: 6.3, bossTurn: 3.2, recovery: 1.12,
   witchHP: 1320, witchDmg: { bolt: 34, wave: 42, curse: 52, blink: 46, storm: 30, beam: 50, skeleton: 18, moonzone: 46 }, witchSpeed: 3.2,
   dragonHP: 3680, dragonDmg: { bite: 46, tail: 54, breath: 38, dive: 55, wing: 32, backdraft: 42 }, dragonSpeed: 3.0,
+  fangHP: 3400, fangDmg: { rend: 40, lunge: 58, spin: 50, plunge: 66, duskwave: 38, duskfire: 42, afterimage: 44 }, fangSpeed: 4.0,
 };
 
 // ============ AUDIO (procedural, no files) ============
@@ -72,6 +73,8 @@ const sfx = {
   step() { noise(0.08, 0.05, 600); },
   bossStep() { tone(58, 0.18, 'sine', 0.12, -15); noise(0.12, 0.07, 300); },
   cast() { tone(520, 0.35, 'sawtooth', 0.09, 220); tone(390, 0.4, 'triangle', 0.1, 300); noise(0.28, 0.06, 2600); },
+  slash() { noise(0.16, 0.14, 4200); tone(660, 0.16, 'triangle', 0.05, -260); },
+  dash() { noise(0.18, 0.08, 1200); tone(180, 0.18, 'sawtooth', 0.06, -120); },
   pillarWarn() { tone(110, 0.55, 'triangle', 0.12, 45); noise(0.3, 0.06, 700); },
   pillar() { tone(46, 0.7, 'sine', 0.35, -12); noise(0.5, 0.24, 900); },
   fireBreath() { noise(0.55, 0.08, 1600); tone(86, 0.55, 'sawtooth', 0.05, -26); },
@@ -330,7 +333,7 @@ const backlight = new THREE.DirectionalLight(0xa8c8e8, 1.45); backlight.position
 const arenaLight = new THREE.PointLight(0xffa15c, 55, 42, 1.7); arenaLight.position.set(0, 7, 0); scene.add(arenaLight);
 
 // procedural environment maps so metal armour reflects the world sky instead of going black
-let envDuncan = null, envWitch = null, envDragon = null;
+let envDuncan = null, envWitch = null, envDragon = null, envFang = null;
 {
   const pmrem = new THREE.PMREMGenerator(renderer); pmrem.compileEquirectangularShader();
   const makeEnv = (stops, glow) => {
@@ -351,6 +354,7 @@ let envDuncan = null, envWitch = null, envDragon = null;
   envDuncan = makeEnv([[0, '#58666e'], [0.42, '#9dadae'], [0.52, '#c6cec0'], [0.56, '#5e6a42'], [1, '#262c1c']], 'rgba(255,150,60,0.5)');
   envWitch = makeEnv([[0, '#120a30'], [0.38, '#2a1e66'], [0.52, '#4a2a7a'], [0.58, '#3a1028'], [1, '#08040f']], 'rgba(190,40,90,0.5)');
   envDragon = makeEnv([[0, '#160806'], [0.38, '#3c140c'], [0.52, '#7a2a12'], [0.58, '#2a0b06'], [1, '#090302']], 'rgba(255,92,28,0.65)');
+  envFang = makeEnv([[0, '#07040d'], [0.38, '#1b1030'], [0.52, '#5c102c'], [0.58, '#1a0510'], [1, '#050207']], 'rgba(255,32,90,0.6)');
   scene.environment = envDuncan;
   pmrem.dispose();
 }
@@ -387,9 +391,20 @@ const WORLD_STYLES = {
     backlight: { color: 0xffa24a, intensity: 1.35 },
     arena: { color: 0xff5a1e, intensity: 0 },
   },
+  fang: {
+    bg: 0x07040d, fog: 0x1a0b18, fogDensity: 0.032, env: () => envFang,
+    sky: { zenith: 0x020107, mid: 0x160920, horizon: 0x5c102c, glow: 0xff274f },
+    hemi: { sky: 0x8b6cff, ground: 0x100812, intensity: 0.55 },
+    moon: { color: 0xff8a9a, intensity: 0.75 },
+    fill: { color: 0xaa5cff, intensity: 0.5 },
+    rim: { color: 0xff2a5e, intensity: 1.9 },
+    backlight: { color: 0x7a2cff, intensity: 1.25 },
+    arena: { color: 0xff2a5e, intensity: 0 },
+  },
 };
 const duncanLights = [];
 const dragonLights = [];
+const fangLights = [];
 function applyWorldStyle(id) {
   const s = WORLD_STYLES[id] || WORLD_STYLES.duncan;
   scene.background = new THREE.Color(s.bg);
@@ -415,6 +430,7 @@ function applyWorldStyle(id) {
   fogGate.visible = duncanWorld;
   for (const l of duncanLights) l.visible = duncanWorld;
   for (const l of dragonLights) l.visible = id === 'dragon';
+  for (const l of fangLights) l.visible = id === 'fang';
 }
 function flashWorldSwap() {
   if (!worldFade) return;
@@ -631,6 +647,9 @@ const WITCH_CENTER = new THREE.Vector3(0, 0, -82);
 const DRAGON_R = 17;
 const DRAGON_CENTER = new THREE.Vector3(0, 0, -168);
 const DRAGON_BASE_SCALE = 0.74;
+const FANG_R = 18;
+const FANG_CENTER = new THREE.Vector3(0, 0, -254);
+const FANG_BASE_SCALE = 1.42;
 const grassTex = canvasTex(512, (x, s) => {
   x.fillStyle = '#4c5733'; x.fillRect(0, 0, s, s);
   // broad damp/dry patches break up the tiling
@@ -1072,6 +1091,9 @@ const hexFlameCoreMat = new THREE.SpriteMaterial({
   blending: THREE.AdditiveBlending, depthWrite: false, fog: true,
 });
 const hexEmberMat = new THREE.SpriteMaterial({ map: fireGlowTex, color: 0x8f5cff, transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false, fog: true });
+const eclipseFlameOuterMat = new THREE.SpriteMaterial({ map: flameTex, color: 0xff2a5e, transparent: true, opacity: 0.58, blending: THREE.AdditiveBlending, depthWrite: false, fog: true });
+const eclipseFlameCoreMat = new THREE.SpriteMaterial({ map: flameTex, color: 0xffd6e8, transparent: true, opacity: 0.86, blending: THREE.AdditiveBlending, depthWrite: false, fog: true });
+const eclipseEmberMat = new THREE.SpriteMaterial({ map: fireGlowTex, color: 0x9b1fff, transparent: true, opacity: 0.36, blending: THREE.AdditiveBlending, depthWrite: false, fog: true });
 const lunarFlameOuterMat = new THREE.SpriteMaterial({ map: flameTex, color: 0x9ec4ff, transparent: true, opacity: 0.58, blending: THREE.AdditiveBlending, depthWrite: false, fog: true });
 const lunarFlameCoreMat = new THREE.SpriteMaterial({ map: flameTex, color: 0xfff2dd, transparent: true, opacity: 0.86, blending: THREE.AdditiveBlending, depthWrite: false, fog: true });
 const lunarEmberMat = new THREE.SpriteMaterial({ map: fireGlowTex, color: 0xcddfff, transparent: true, opacity: 0.34, blending: THREE.AdditiveBlending, depthWrite: false, fog: true });
@@ -1605,6 +1627,130 @@ const dragonMotes = [];
 }
 dragonWorldGroup.visible = false;
 
+// ============ THE MOONLESS COURT (Korvath arena + eclipse world) ============
+const fangStonePos = new THREE.Vector3(FANG_CENTER.x, 0, FANG_CENTER.z - 11.5);
+let fangStone, fangStoneMat, fangStoneGlow, fangLight;
+const fangArenaGroup = new THREE.Group();
+fangArenaGroup.name = 'fang-arena';
+scene.add(fangArenaGroup);
+{
+  const C = FANG_CENTER;
+  const courtMat = new THREE.MeshStandardMaterial({
+    map: dirtTex, color: 0x2e2438, roughness: 1, transparent: true, opacity: 0.94,
+    alphaMap: arenaFadeTex, depthWrite: false,
+    normalMap: groundNormalTex, normalScale: new THREE.Vector2(0.9, 0.9),
+  });
+  const court = new THREE.Mesh(new THREE.CircleGeometry(FANG_R + 1.8, 72), courtMat);
+  court.rotation.x = -Math.PI / 2; court.position.set(C.x, 0.006, C.z); court.receiveShadow = true; fangArenaGroup.add(court);
+  const bleed = new THREE.Mesh(new THREE.RingGeometry(FANG_R - 1.5, FANG_R + 1.8, 96),
+    new THREE.MeshBasicMaterial({ color: 0x4a0b22, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
+  bleed.rotation.x = -Math.PI / 2; bleed.position.set(C.x, 0.014, C.z); fangArenaGroup.add(bleed);
+  for (const [rr, op] of [[4.8, 0.37], [8.7, 0.24], [12.9, 0.15]]) {
+    const ring = new THREE.Mesh(new THREE.RingGeometry(rr, rr + 0.055, 96),
+      new THREE.MeshBasicMaterial({ color: 0xff2a5e, transparent: true, opacity: op, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
+    ring.rotation.x = -Math.PI / 2; ring.position.set(C.x, 0.02, C.z); fangArenaGroup.add(ring);
+  }
+  const obMat = new THREE.MeshStandardMaterial({ color: 0x17111d, roughness: 0.92, metalness: 0.12, flatShading: true });
+  for (let i = 0; i < 12; i++) {
+    const a = i / 12 * Math.PI * 2 + 0.12;
+    const rr = FANG_R - 0.7 + Math.random() * 0.7;
+    const h = 2.6 + Math.random() * 4.4;
+    const ob = new THREE.Mesh(new THREE.ConeGeometry(0.42 + Math.random() * 0.28, h, 4), obMat);
+    ob.position.set(C.x + Math.cos(a) * rr, h / 2 - 0.15, C.z + Math.sin(a) * rr);
+    ob.rotation.y = -a + (Math.random() - 0.5) * 0.4;
+    ob.rotation.z = (Math.random() - 0.5) * 0.12;
+    ob.castShadow = true; fangArenaGroup.add(ob);
+  }
+  const DS = fangStonePos;
+  const dais = new THREE.Mesh(new THREE.CylinderGeometry(1.02, 1.3, 0.32, 8), new THREE.MeshStandardMaterial({ color: 0x241a2c, roughness: 0.85, metalness: 0.3, flatShading: true }));
+  dais.position.set(DS.x, 0.18, DS.z); dais.castShadow = dais.receiveShadow = true; fangArenaGroup.add(dais);
+  const daisTop = new THREE.Mesh(new THREE.CylinderGeometry(0.82, 0.98, 0.10, 8), new THREE.MeshStandardMaterial({ color: 0x3a243e, roughness: 0.7, metalness: 0.5 }));
+  daisTop.position.set(DS.x, 0.39, DS.z); daisTop.castShadow = true; fangArenaGroup.add(daisTop);
+  fangStoneMat = new THREE.MeshStandardMaterial({ color: 0x120a18, emissive: 0xff2a5e, emissiveIntensity: 1.9, metalness: 0.7, roughness: 0.24 });
+  fangStone = new THREE.Mesh(new THREE.OctahedronGeometry(0.78, 0), fangStoneMat);
+  fangStone.scale.set(0.72, 2.15, 0.72); fangStone.position.set(DS.x, 2.45, DS.z); fangStone.castShadow = true; fangArenaGroup.add(fangStone);
+  const stoneRing = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.035, 8, 48),
+    new THREE.MeshBasicMaterial({ color: 0xff4d6d, transparent: true, opacity: 0.58, blending: THREE.AdditiveBlending, depthWrite: false }));
+  stoneRing.position.set(DS.x, 2.45, DS.z); stoneRing.rotation.x = 0.18; fangArenaGroup.add(stoneRing);
+  fangStoneGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: fireGlowTex, color: 0xff2a5e, transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false }));
+  fangStoneGlow.scale.setScalar(4.8); fangStoneGlow.position.set(DS.x, 2.45, DS.z); fangArenaGroup.add(fangStoneGlow);
+  fangLight = new THREE.PointLight(0xff2a5e, 62, 52, 1.7); fangLight.position.set(C.x, 7.5, C.z);
+  fangArenaGroup.add(fangLight); fangLights.push(fangLight);
+  const veil = new THREE.Mesh(new THREE.PlaneGeometry(6.4, 3.8),
+    new THREE.MeshBasicMaterial({ color: 0x140818, transparent: true, opacity: 0.62, side: THREE.DoubleSide, depthWrite: false }));
+  veil.position.set(C.x, 2.2, C.z + FANG_R - 3.4); fangArenaGroup.add(veil);
+  for (let i = 0; i < 24; i++) {
+    const a = i / 24 * Math.PI * 2;
+    const shard = new THREE.Mesh(new THREE.TetrahedronGeometry(0.08 + Math.random() * 0.12, 0),
+      new THREE.MeshBasicMaterial({ color: Math.random() < 0.5 ? 0xff2a5e : 0x8b5cff, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }));
+    shard.position.set(C.x + Math.cos(a) * (FANG_R - 2.4 + Math.random() * 0.9), 0.12 + Math.random() * 0.2, C.z + Math.sin(a) * (FANG_R - 2.4 + Math.random() * 0.9));
+    shard.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3); fangArenaGroup.add(shard);
+  }
+}
+fangArenaGroup.visible = false;
+
+const fangWorldGroup = new THREE.Group();
+fangWorldGroup.name = 'fang-world';
+scene.add(fangWorldGroup);
+const fangMotes = [];
+let fangMoonDisc = null, fangMoonRing = null;
+{
+  const C = FANG_CENTER;
+  const floorTex = canvasTex(512, (x, s) => {
+    x.fillStyle = '#120d1a'; x.fillRect(0, 0, s, s);
+    for (let i = 0; i < 150; i++) {
+      const g = x.createRadialGradient(Math.random() * s, Math.random() * s, 2, Math.random() * s, Math.random() * s, 20 + Math.random() * 90);
+      const pal = ['rgba(40,26,58,0.24)', 'rgba(70,20,46,0.14)', 'rgba(10,7,16,0.32)', 'rgba(94,30,72,0.10)'];
+      g.addColorStop(0, pal[Math.random() * pal.length | 0]); g.addColorStop(1, 'rgba(0,0,0,0)');
+      x.fillStyle = g; x.fillRect(0, 0, s, s);
+    }
+    for (let i = 0; i < 16000; i++) {
+      const v = 14 + Math.random() * 30 | 0;
+      x.fillStyle = `rgba(${v + 8},${v},${v + 14},${0.2 + Math.random() * 0.3})`;
+      x.fillRect(Math.random() * s, Math.random() * s, 1 + Math.random() * 3, 1 + Math.random() * 2);
+    }
+  }, 24);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(260, 260), new THREE.MeshStandardMaterial({
+    map: floorTex, color: 0xffffff, roughness: 0.98, metalness: 0.02,
+    normalMap: groundNormalTex, normalScale: new THREE.Vector2(0.8, 0.8),
+  }));
+  floor.name = 'moonless-floor'; floor.rotation.x = -Math.PI / 2; floor.position.set(C.x, 0.004, C.z); floor.receiveShadow = true; fangWorldGroup.add(floor);
+  const ruMat = new THREE.MeshStandardMaterial({ color: 0x18121f, roughness: 0.94, metalness: 0.08, flatShading: true });
+  const dummy = new THREE.Object3D();
+  const count = 44;
+  const ruins = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), ruMat, count);
+  for (let i = 0; i < count; i++) {
+    const a = i / count * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
+    const rr = FANG_R + 4 + Math.random() * 34;
+    const h = 2 + Math.random() * 13;
+    dummy.position.set(C.x + Math.cos(a) * rr, h / 2 - 0.2, C.z + Math.sin(a) * rr);
+    dummy.rotation.set((Math.random() - 0.5) * 0.1, Math.random() * Math.PI, (Math.random() - 0.5) * 0.14);
+    dummy.scale.set(0.6 + Math.random() * 2.4, h, 0.6 + Math.random() * 2.4);
+    dummy.updateMatrix(); ruins.setMatrixAt(i, dummy.matrix);
+  }
+  ruins.instanceMatrix.needsUpdate = true; ruins.castShadow = true; fangWorldGroup.add(ruins);
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(16, 64), new THREE.MeshBasicMaterial({ color: 0x050208, fog: false }));
+  disc.position.set(C.x, 35, C.z - 78); fangWorldGroup.add(disc); fangMoonDisc = disc;
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(16.7, 0.34, 8, 96), new THREE.MeshBasicMaterial({ color: 0xff2a5e, transparent: true, opacity: 0.78, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+  ring.position.set(C.x, 35, C.z - 77.8); fangWorldGroup.add(ring); fangMoonRing = ring;
+  const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: fireGlowTex, color: 0xff2a5e, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+  halo.scale.setScalar(48); halo.position.set(C.x, 35, C.z - 78); fangWorldGroup.add(halo);
+  const moteMats = [0xff2a5e, 0x8b5cff, 0xff8a9a].map(c => new THREE.SpriteMaterial({
+    map: fireGlowTex, color: c, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, fog: true,
+  }));
+  for (let i = 0; i < 24; i++) {
+    const sp = new THREE.Sprite(moteMats[i % 3]);
+    const a = Math.random() * Math.PI * 2, rr = 5 + Math.random() * 30;
+    sp.position.set(C.x + Math.cos(a) * rr, 0.6 + Math.random() * 7, C.z + Math.sin(a) * rr);
+    sp.scale.setScalar(0.16 + Math.random() * 0.3);
+    sp.userData = { a, rr, y: sp.position.y, speed: 0.05 + Math.random() * 0.12, bob: Math.random() * 6.28 };
+    fangMotes.push(sp); fangWorldGroup.add(sp);
+  }
+  const li = new THREE.PointLight(0xff2a5e, 58, 58, 1.7); li.position.set(C.x, 8, C.z);
+  fangWorldGroup.add(li); fangLights.push(li);
+}
+fangWorldGroup.visible = false;
+
 // ============ DARK FOREST & DISTANT RUINED KEEP ============
 {
   const barkMat = new THREE.MeshStandardMaterial({ color: 0x27221c, roughness: 1, flatShading: true });
@@ -1849,6 +1995,7 @@ const BOSS_SHARDS = [
   { id: 'ashenShard', name: 'Ashen Shard', icon: 'gem', rarity: 'legendary', boss: 'duncan', desc: 'A shard of Duncan\'s vigil. +12% damage, +8% max HP.', apply: P => { P.mods.dmg *= 1.12; P.mods.hp *= 1.08; P.maxHP = Math.round(TUNE.playerHP * P.mods.hp); P.hp = Math.min(P.hp, P.maxHP); }, unapply: P => { P.mods.dmg /= 1.12; P.mods.hp /= 1.08; P.maxHP = Math.round(TUNE.playerHP * P.mods.hp); P.hp = Math.min(P.hp, P.maxHP); } },
   { id: 'nightshadeShard', name: 'Nightshade Shard', icon: 'gem', rarity: 'legendary', boss: 'witch', desc: 'A splinter of Morgana\'s veil. +18% max stamina, +8% move speed.', apply: P => { P.mods.st *= 1.18; P.stMax = Math.round(TUNE.playerST * P.mods.st); P.st = Math.min(P.st, P.stMax); P.mods.spd *= 1.08; }, unapply: P => { P.mods.st /= 1.18; P.stMax = Math.round(TUNE.playerST * P.mods.st); P.st = Math.min(P.st, P.stMax); P.mods.spd /= 1.08; } },
   { id: 'dragonShard', name: 'Dragon Shard', icon: 'gem', rarity: 'legendary', boss: 'dragon', desc: 'A scale of Vytles, still molten. +20% max HP, +10% damage.', apply: P => { P.mods.hp *= 1.20; P.maxHP = Math.round(TUNE.playerHP * P.mods.hp); P.hp = Math.min(P.hp, P.maxHP); P.mods.dmg *= 1.10; }, unapply: P => { P.mods.hp /= 1.20; P.maxHP = Math.round(TUNE.playerHP * P.mods.hp); P.hp = Math.min(P.hp, P.maxHP); P.mods.dmg /= 1.10; } },
+  { id: 'eclipseShard', name: 'Eclipse Fang', icon: 'gem', rarity: 'legendary', boss: 'fang', desc: 'A splinter of Korvath\'s black blade. +16% damage, +8% move speed.', apply: P => { P.mods.dmg *= 1.16; P.mods.spd *= 1.08; }, unapply: P => { P.mods.dmg /= 1.16; P.mods.spd /= 1.08; } },
 ];
 const ALL_SPOILS = [...SPOILS, ...BOSS_SHARDS];
 function bossShardFor(id) { return BOSS_SHARDS.find(s => s.boss === id) || null; }
@@ -2806,6 +2953,89 @@ const dragonK = buildDragon();
 scene.add(dragonK.group); dragonK.group.name = 'dragon'; dragonK.group.visible = false;
 const dragonShadow = blobShadow(5.2, 0.42); dragonShadow.visible = false;
 
+// Korvath — a cursed wolf-knight with a black eclipse blade.
+const fangK = buildKnight({ scale: FANG_BASE_SCALE, armor: 0x202029, trim: 0xa32343, cloth: 0x260916, plume: 0x241c2a, emissive: 0xff274f, weapon: 'greatsword' });
+scene.add(fangK.group); fangK.group.name = 'fang'; fangK.group.visible = false;
+const fangShadow = blobShadow(3.4, 0.44); fangShadow.visible = false;
+{
+  const p = fangK.parts;
+  p.shield.visible = false;
+  const furMat = new THREE.MeshStandardMaterial({ color: 0x17121c, roughness: 0.96, metalness: 0.02, map: furTex, bumpMap: furTex, bumpScale: 0.02 });
+  const boneMat = new THREE.MeshStandardMaterial({ color: 0xc9b9ad, roughness: 0.65, metalness: 0.05 });
+  [-1, 1].forEach(side => {
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.36, 5), furMat);
+    ear.position.set(0.115 * side, 0.345, -0.01);
+    ear.rotation.x = -0.12; ear.rotation.z = -side * 0.18;
+    ear.castShadow = true; p.head.add(ear);
+  });
+  const snout = new THREE.Mesh(new RoundedBoxGeometry(0.15, 0.10, 0.15, 2, 0.03), furMat);
+  snout.position.set(0, 0.015, 0.235); snout.castShadow = true; p.head.add(snout);
+  [-1, 1].forEach(side => {
+    const fang = new THREE.Mesh(new THREE.ConeGeometry(0.014, 0.075, 4), boneMat);
+    fang.position.set(0.045 * side, -0.035, 0.30); fang.rotation.x = Math.PI; p.head.add(fang);
+  });
+  p.tail = new THREE.Group(); p.tail.position.set(0, 0.04, -0.27); p.hips.add(p.tail);
+  p.tailSegs = [];
+  let tailParent = p.tail;
+  for (let i = 0; i < 4; i++) {
+    const seg = new THREE.Group();
+    seg.position.z = i === 0 ? -0.12 : -0.19;
+    tailParent.add(seg);
+    const part = new THREE.Mesh(new THREE.CapsuleGeometry(0.055 - i * 0.006, 0.22, 4, 7), furMat);
+    part.rotation.x = Math.PI / 2; part.position.z = -0.10; part.castShadow = true; seg.add(part);
+    p.tailSegs.push(seg); tailParent = seg;
+  }
+  const tuft = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.22, 6), furMat);
+  tuft.rotation.x = -Math.PI / 2; tuft.position.z = -0.16; tailParent.add(tuft);
+
+  const auraMat = new THREE.MeshBasicMaterial({ color: 0xff2a5e, transparent: true, opacity: 0.20, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+  const auraRing = new THREE.Mesh(new THREE.RingGeometry(1.05, 1.34, 56), auraMat);
+  auraRing.rotation.x = -Math.PI / 2; auraRing.position.y = 0.035; fangK.group.add(auraRing);
+  p.auraRing = auraRing; p.auraMat = auraMat;
+
+  const swordG = p.sword;
+  while (swordG.children.length) swordG.remove(swordG.children[0]);
+  const bladeMat = new THREE.MeshStandardMaterial({ color: 0x0b0910, metalness: 0.92, roughness: 0.30, emissive: 0x9c1030, emissiveIntensity: 0.95 });
+  const edgeMat = new THREE.MeshStandardMaterial({ color: 0x5a2434, metalness: 1.0, roughness: 0.26, emissive: 0xff2a5e, emissiveIntensity: 0.55 });
+  const gripMat = new THREE.MeshStandardMaterial({ color: 0x1a0e15, roughness: 0.95 });
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.44, 0.055), bladeMat);
+  blade.position.y = -0.84; blade.castShadow = true; swordG.add(blade);
+  const edge = new THREE.Mesh(new THREE.BoxGeometry(0.022, 1.42, 0.062), edgeMat);
+  edge.position.set(0.072, -0.84, 0); swordG.add(edge);
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.10, 0.30, 4), bladeMat);
+  tip.position.y = -1.70; tip.rotation.x = Math.PI; tip.rotation.y = Math.PI / 4; tip.castShadow = true; swordG.add(tip);
+  for (let i = 0; i < 7; i++) {
+    const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.13, 4), bladeMat);
+    tooth.position.set(-0.095, -0.30 - i * 0.15, 0); tooth.rotation.z = Math.PI / 2; swordG.add(tooth);
+  }
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.08, 0.12), edgeMat);
+  guard.position.y = -0.10; guard.castShadow = true; swordG.add(guard);
+  [-1, 1].forEach(side => {
+    const quillon = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.20, 4), edgeMat);
+    quillon.position.set(side * 0.25, -0.05, 0); quillon.rotation.z = side * 0.8; swordG.add(quillon);
+  });
+  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.048, 0.34, 10), gripMat);
+  grip.position.y = 0.08; swordG.add(grip);
+  const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), edgeMat);
+  pommel.position.y = 0.28; swordG.add(pommel);
+  const bladeGlow = new THREE.Mesh(new THREE.BoxGeometry(0.23, 1.46, 0.09),
+    new THREE.MeshBasicMaterial({ color: 0xff2a5e, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+  bladeGlow.position.y = -0.84; swordG.add(bladeGlow); p.swordGlow = bladeGlow;
+  const trail = new THREE.Mesh(new THREE.PlaneGeometry(0.58, 1.78),
+    new THREE.MeshBasicMaterial({ color: 0xff2a5e, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
+  trail.position.y = -0.84; swordG.add(trail); p.trail = trail;
+  p.visor.material.emissive.setHex(0xff274f);
+  const eyeMat = new THREE.SpriteMaterial({ map: fireGlowTex, color: 0xff274f, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
+  p.eyeGlows = [];
+  [-1, 1].forEach(side => {
+    const eye = new THREE.Sprite(eyeMat.clone());
+    eye.position.set(0.062 * side, 0.095, 0.222); eye.scale.setScalar(0.095);
+    p.head.add(eye); p.eyeGlows.push(eye);
+  });
+  p.keyLight = new THREE.PointLight(0xc9a6ff, 34, 24, 1.8); p.keyLight.position.set(2.8, 5.2, 6.0); fangK.group.add(p.keyLight);
+  p.fillLight = new THREE.PointLight(0xff2a5e, 11, 22, 1.9); p.fillLight.position.set(-5.5, 3.2, 1.5); fangK.group.add(p.fillLight);
+}
+
 const witchShadow = blobShadow(3.1, 0.36); witchShadow.visible = false;
 const witchLunarAura = (() => {
   const group = new THREE.Group(); group.visible = false; witchK.group.add(group);
@@ -3297,10 +3527,11 @@ function clearHexBolts() {
 }
 
 const hexPillars = [];
-function spawnHexPillar(x, z, delay = 1.2, radius = 2.0, dmg = 44, mult = 1, lunar = false) {
+function spawnHexPillar(x, z, delay = 1.2, radius = 2.0, dmg = 44, mult = 1, lunar = false, theme = 'witch') {
+  const isFang = theme === 'fang';
   const grp = new THREE.Group(); grp.position.set(x, 0, z); scene.add(grp);
-  const ringMat = new THREE.MeshBasicMaterial({ color: lunar ? 0xdce9ff : 0x9b5cff, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
-  const fillMat = new THREE.MeshBasicMaterial({ color: lunar ? 0xff9ec2 : 0xd54aff, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+  const ringMat = new THREE.MeshBasicMaterial({ color: isFang ? 0xff2a5e : lunar ? 0xdce9ff : 0x9b5cff, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+  const fillMat = new THREE.MeshBasicMaterial({ color: isFang ? 0x7a0b3a : lunar ? 0xff9ec2 : 0xd54aff, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
   const ring = new THREE.Mesh(pillarRingGeo, ringMat);
   ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05; ring.scale.setScalar(radius); grp.add(ring);
   const fill = new THREE.Mesh(pillarFillGeo, fillMat);
@@ -3309,14 +3540,15 @@ function spawnHexPillar(x, z, delay = 1.2, radius = 2.0, dmg = 44, mult = 1, lun
   const flameCount = lunar ? 4 : 6;
   for (let i = 0; i < flameCount; i++) {
     const isOuter = i % 2 === 0;
-    const s = new THREE.Sprite(lunar ? (isOuter ? lunarFlameOuterMat : lunarFlameCoreMat) : (isOuter ? hexFlameOuterMat : hexFlameCoreMat));
+    const flameMat = isFang ? (isOuter ? eclipseFlameOuterMat : eclipseFlameCoreMat) : lunar ? (isOuter ? lunarFlameOuterMat : lunarFlameCoreMat) : (isOuter ? hexFlameOuterMat : hexFlameCoreMat);
+    const s = new THREE.Sprite(flameMat);
     s.position.set((Math.random() - 0.5) * radius * 0.5, 1.0 + i * (lunar ? 1.5 : 1.05), (Math.random() - 0.5) * radius * 0.5);
     s.scale.set(radius * (isOuter ? 2.6 - i * 0.12 : 1.15), 2.0 + Math.random() * 0.7, 1);
     fire.add(s);
   }
-  const glow = new THREE.Sprite(lunar ? lunarEmberMat : hexEmberMat);
+  const glow = new THREE.Sprite(isFang ? eclipseEmberMat : lunar ? lunarEmberMat : hexEmberMat);
   glow.scale.setScalar(radius * 4.2); glow.position.y = 0.9; fire.add(glow);
-  hexPillars.push({ grp, ring, fill, ringMat, fillMat, fire, x, z, radius, dmg, mult, lunar, t: 0, delay, state: 'indicator', eruptT: 0 });
+  hexPillars.push({ grp, ring, fill, ringMat, fillMat, fire, x, z, radius, dmg, mult, lunar, fang: isFang, t: 0, delay, state: 'indicator', eruptT: 0 });
 }
 function updateHexPillars(dt) {
   for (let i = hexPillars.length - 1; i >= 0; i--) {
@@ -3334,8 +3566,8 @@ function updateHexPillars(dt) {
         p.state = 'erupt'; p.eruptT = 0;
         p.fire.visible = true; p.ring.visible = false; p.fill.visible = false;
         sfx.pillar(); G.shake = Math.max(G.shake, 0.35);
-        spawnRing(new THREE.Vector3(p.x, 0, p.z), p.lunar ? 0xe8f1ff : 0x9b5cff, p.radius * 2.6);
-        spawnSparks(new THREE.Vector3(p.x, 0.5, p.z), p.lunar ? 8 : 16, p.lunar ? 0xffd4e4 : 0x9b5cff, p.lunar ? 7 : 6);
+        spawnRing(new THREE.Vector3(p.x, 0, p.z), p.fang ? 0xff2a5e : p.lunar ? 0xe8f1ff : 0x9b5cff, p.radius * 2.6);
+        spawnSparks(new THREE.Vector3(p.x, 0.5, p.z), p.fang ? 18 : p.lunar ? 8 : 16, p.fang ? 0xff4d6d : p.lunar ? 0xffd4e4 : 0x9b5cff, p.fang ? 7 : p.lunar ? 7 : 6);
         if (P.state !== 'dead' && Math.hypot(P.pos.x - p.x, P.pos.z - p.z) < p.radius + 0.35) {
           damagePlayer(Math.round(p.dmg * p.mult), new THREE.Vector3(p.x, 0, p.z), 'curse');
         }
@@ -3797,7 +4029,7 @@ const G = {
   mode: 'title', // title | play | dead | victory
   bossId: 'duncan',
   inArena: false, bossActive: false, bossDead: false,
-  defeated: { duncan: false, witch: false, dragon: false },
+  defeated: { duncan: false, witch: false, dragon: false, fang: false },
   locked: false, ng: 0, fightTime: 0, hitstop: 0, paused: false,
   camYaw: 0, camPitch: 0.22, camDist: 6.5,
   shake: 0,
@@ -3810,6 +4042,7 @@ const ARENAS = {
   duncan: { id: 'duncan', center: new THREE.Vector3(0, 0, 0), radius: ARENA_R, stone: stonePos },
   witch: { id: 'witch', center: WITCH_CENTER, radius: WITCH_R, stone: witchStonePos },
   dragon: { id: 'dragon', center: DRAGON_CENTER, radius: DRAGON_R, stone: dragonStonePos },
+  fang: { id: 'fang', center: FANG_CENTER, radius: FANG_R, stone: fangStonePos },
 };
 let ARENA = ARENAS.duncan;
 
@@ -3835,8 +4068,15 @@ const BOSSES = {
     bossName: 'VYTLES  ·  THE DRAGON',
     arena: ARENAS.dragon,
   },
+  fang: {
+    id: 'fang', name: 'KORVATH', epithet: 'THE ECLIPSE FANG', glyph: 'ᛉ',
+    accent: '#ff3d6d', deep: '#2a0614', difficulty: 'THE LAST VIGIL',
+    desc: 'A wolf-knight bound to a dying eclipse. Korvath\'s black blade drinks the light, and his shadow always strikes first.',
+    bossName: 'KORVATH  ·  THE ECLIPSE FANG',
+    arena: ARENAS.fang,
+  },
 };
-const BOSS_ORDER = ['duncan', 'witch', 'dragon'];
+const BOSS_ORDER = ['duncan', 'witch', 'dragon', 'fang'];
 function bossUnlocked(id) {
   const i = BOSS_ORDER.indexOf(id);
   return i <= 0 || !!G.defeated[BOSS_ORDER[i - 1]];
@@ -3845,17 +4085,19 @@ function previousBossName(id) {
   const i = BOSS_ORDER.indexOf(id);
   return i > 0 ? BOSSES[BOSS_ORDER[i - 1]].name : '';
 }
-function activeBoss() { return G.bossId === 'witch' ? W : G.bossId === 'dragon' ? V : B; }
-function activeBossGroup() { return G.bossId === 'witch' ? witchK.group : G.bossId === 'dragon' ? dragonK.group : bossK.group; }
+function activeBoss() { return G.bossId === 'witch' ? W : G.bossId === 'dragon' ? V : G.bossId === 'fang' ? F : B; }
+function activeBossGroup() { return G.bossId === 'witch' ? witchK.group : G.bossId === 'dragon' ? dragonK.group : G.bossId === 'fang' ? fangK.group : bossK.group; }
 function activeStonePos() { return ARENA.stone; }
 function activeBossScale() {
   if (G.bossId === 'witch') return witchK.group.scale.x / WITCH_BASE_SCALE;
   if (G.bossId === 'dragon') return dragonK.group.scale.x / DRAGON_BASE_SCALE;
+  if (G.bossId === 'fang') return fangK.group.scale.x / FANG_BASE_SCALE;
   return bossK.group.scale.x / BOSS_BASE_SCALE;
 }
 function activeBossAimY() {
   if (G.bossId === 'witch') return 2.05;
   if (G.bossId === 'dragon') return 2.55;
+  if (G.bossId === 'fang') return 2.35;
   return 2.05 * activeBossScale();
 }
 function setBossName(id) {
@@ -3927,6 +4169,7 @@ function loadGame() {
     duncan: !!(d.defeated && d.defeated.duncan),
     witch: !!(d.defeated && d.defeated.witch),
     dragon: !!(d.defeated && d.defeated.dragon),
+    fang: !!(d.defeated && d.defeated.fang),
   };
   const earnedShards = BOSS_ORDER.filter(id => G.defeated[id]).map(bossShardFor).filter(Boolean).map(s => s.id);
   if (earnedShards.length) P.spoils = [...new Set([...P.spoils, ...earnedShards])];
@@ -3948,14 +4191,15 @@ function eraseSave() {
   P.mods = { dmg: 1, hp: 1, st: 1, spd: 1, flask: 1 };
   P.maxHP = TUNE.playerHP; P.stMax = TUNE.playerST;
   G.ng = 0; G.inArena = false; G.bossDead = false; G.bossActive = false; G.fightTime = 0;
-  G.defeated = { duncan: false, witch: false, dragon: false };
+  G.defeated = { duncan: false, witch: false, dragon: false, fang: false };
   G.bossId = 'duncan'; ARENA = ARENAS.duncan;
   witchArenaGroup.visible = false; witchWorldGroup.visible = false;
   dragonArenaGroup.visible = false; dragonWorldGroup.visible = false;
+  fangArenaGroup.visible = false; fangWorldGroup.visible = false;
   applyWorldStyle('duncan');
   applyWeaponMesh('longsword');
   closeInventory();
-  resetBoss(); resetWitch(); resetDragon(); resetPlayer(); updateFlasks(); updateWeaponLabel(); updateHUD();
+  resetBoss(); resetWitch(); resetDragon(); resetFang(); resetPlayer(); updateFlasks(); updateWeaponLabel(); updateHUD();
   setBossName(G.bossId);
   const el = document.getElementById('save-note'); if (el) el.textContent = SAVE_NOTE;
   showCenter('SAVE ERASED', 'a new vigil begins');
@@ -3984,6 +4228,44 @@ const V = {
   state: 'dormant', t: 0, decideCd: 0, attackKind: '', hasHit: false,
   phase2: false, staggerAcc: 0, deadT: 0, breathCd: 0, stormCd: 0, roarCd: 0, animT: 0, lastAttack: '',
 };
+let fangMarkWarn = null, fangMarkWarnMat = null;
+const fangEchoes = [];
+function clearFangEchoes() {
+  for (let i = fangEchoes.length - 1; i >= 0; i--) { scene.remove(fangEchoes[i].grp); fangEchoes[i].mat.dispose(); }
+  fangEchoes.length = 0;
+}
+function ensureFangMarkWarn() {
+  if (fangMarkWarn) return;
+  fangMarkWarnMat = new THREE.MeshBasicMaterial({ color: 0xff2a5e, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+  fangMarkWarn = new THREE.Group();
+  const edge = new THREE.Mesh(new THREE.RingGeometry(4.7, 5.5, 56), fangMarkWarnMat);
+  edge.rotation.x = -Math.PI / 2; fangMarkWarn.add(edge);
+  const fill = new THREE.Mesh(new THREE.CircleGeometry(5.35, 48), fangMarkWarnMat);
+  fill.rotation.x = -Math.PI / 2; fill.position.y = -0.002; fangMarkWarn.add(fill);
+  const core = new THREE.Mesh(new THREE.RingGeometry(0.7, 1.05, 32), fangMarkWarnMat);
+  core.rotation.x = -Math.PI / 2; fangMarkWarn.add(core);
+  fangMarkWarn.position.y = 0.075; fangMarkWarn.visible = false; scene.add(fangMarkWarn);
+}
+function hideFangMarkWarn() { if (fangMarkWarn) fangMarkWarn.visible = false; }
+const F = {
+  pos: new THREE.Vector3(FANG_CENTER.x, 0, FANG_CENTER.z - 5), yaw: Math.PI, hp: TUNE.fangHP, maxHP: TUNE.fangHP,
+  state: 'dormant', t: 0, decideCd: 0, attackKind: '', hasHit: false,
+  phase2: false, staggerAcc: 0, deadT: 0, animT: 0, lastAttack: '', mark: new THREE.Vector3(),
+};
+function resetFang() {
+  F.maxHP = TUNE.fangHP + G.ng * 190;
+  F.hp = F.maxHP; F.pos.set(FANG_CENTER.x, 0, FANG_CENTER.z - 5); F.yaw = Math.PI;
+  F.state = 'dormant'; F.t = 0; F.decideCd = 0; F.attackKind = ''; F.hasHit = false;
+  F.phase2 = false; F.staggerAcc = 0; F.deadT = 0; F.lastAttack = '';
+  clearBossHazards(); clearHexHazards();
+  hideFangMarkWarn(); telegraphEl.classList.add('hidden');
+  clearFangEchoes();
+  fangK.group.position.copy(F.pos); fangK.group.rotation.y = F.yaw;
+  fangK.group.scale.setScalar(FANG_BASE_SCALE);
+  fangK.group.visible = false; fangShadow.visible = false;
+  if (fangK.parts.swordGlow) fangK.parts.swordGlow.material.opacity = 0;
+  if (G.bossId === 'fang') { bossPlate.classList.add('hidden'); G.bossActive = false; }
+}
 function resetDragon() {
   V.maxHP = TUNE.dragonHP + G.ng * 170;
   V.hp = V.maxHP; V.pos.set(DRAGON_CENTER.x, 0, DRAGON_CENTER.z - 5); V.yaw = Math.PI;
@@ -4044,7 +4326,7 @@ function resetPlayer() {
   P.state = 'idle'; P.t = 0; P.iframes = false; P.drinkHeal = 0;
 }
 const saveRestored = loadGame();
-resetBoss(); resetWitch(); resetDragon(); resetPlayer();
+resetBoss(); resetWitch(); resetDragon(); resetFang(); resetPlayer();
 applyWorldStyle(G.bossId);
 
 // ============ INPUT ============
@@ -4129,6 +4411,10 @@ function tryInteract() {
     if (G.inArena && !G.bossActive && !G.bossDead && near(dragonStonePos, P.pos, 3.8)) touchDragonStone();
     return;
   }
+  if (G.bossId === 'fang') {
+    if (G.inArena && !G.bossActive && !G.bossDead && near(fangStonePos, P.pos, 3.8)) touchFangStone();
+    return;
+  }
   if (near(bonfirePos, P.pos, 3.2) && !G.inArena) { restAtBonfire(); return; }
   if (!G.inArena && near(new THREE.Vector3(0, 0, ARENA_R - 3.4), P.pos, 3.0)) { enterArena(); return; }
   if (G.inArena && !G.bossActive && !G.bossDead && near(stonePos, P.pos, 3.4)) { touchStone(); return; }
@@ -4192,7 +4478,7 @@ function resolveStoneCollision() {
   if (!G.inArena) return;
   const s = activeStonePos();
   const dx = P.pos.x - s.x, dz = P.pos.z - s.z;
-  const d = Math.hypot(dx, dz), minD = G.bossId === 'witch' ? 1.75 : G.bossId === 'dragon' ? 2.2 : 1.15;
+  const d = Math.hypot(dx, dz), minD = G.bossId === 'witch' ? 1.75 : G.bossId === 'dragon' ? 2.2 : G.bossId === 'fang' ? 1.9 : 1.15;
   if (d >= minD) return;
   let nx, nz;
   if (d < 1e-4) { nx = 0; nz = 1; }
@@ -4281,6 +4567,7 @@ function damageWitch(dmg, poiseDmg = 26) {
 function dealDamageToActiveBoss(dmg, poiseDmg) {
   if (G.bossId === 'witch') damageWitch(dmg, poiseDmg);
   else if (G.bossId === 'dragon') damageDragon(dmg, poiseDmg);
+  else if (G.bossId === 'fang') damageFang(dmg, poiseDmg);
   else damageBoss(dmg, poiseDmg);
 }
 
@@ -4418,7 +4705,7 @@ function playerDie() {
   stopBossMusic();
   clearBossHazards();
   clearHexHazards();
-  hideDragonBreathWarn(); hideDragonDiveWarn(); hideDragonBackdraftWarn();
+  hideDragonBreathWarn(); hideDragonDiveWarn(); hideDragonBackdraftWarn(); hideFangMarkWarn();
   telegraphEl.classList.add('hidden');
   setTimeout(() => deathScreen.classList.remove('hidden'), 900);
   setTimeout(() => {
@@ -4435,6 +4722,12 @@ function playerDie() {
       P.pos.set(DRAGON_CENTER.x, 0, DRAGON_CENTER.z + 8); P.yaw = Math.PI;
       updateFlasks(); G.mode = 'play';
       showCenter('YOU WAKE AT THE CALDERA', 'touch the dragon stone to call Vytles back');
+    } else if (G.bossId === 'fang') {
+      resetFang(); G.inArena = true;
+      resetPlayer();
+      P.pos.set(FANG_CENTER.x, 0, FANG_CENTER.z + 8); P.yaw = Math.PI;
+      updateFlasks(); G.mode = 'play';
+      showCenter('YOU WAKE IN THE MOONLESS COURT', 'touch the eclipse stone to call Korvath back');
     } else {
       G.inArena = false; fogGate.material.opacity = 0.55;
       resetBoss(); resetPlayer(); updateFlasks();
@@ -4503,15 +4796,18 @@ function showVictory() {
   G.mode = 'victory';
   const isWitch = G.bossId === 'witch';
   const isDragon = G.bossId === 'dragon';
+  const isFang = G.bossId === 'fang';
   const mins = Math.floor(G.fightTime / 60), secs = Math.floor(G.fightTime % 60);
   victoryStats.innerHTML = `Time <b>${mins}:${String(secs).padStart(2, '0')}</b> · NG+<b>${G.ng}</b><br>Estus left <b>${P.flasks}</b> · HP <b>${Math.ceil(P.hp)}/${P.maxHP}</b>`;
-  $('victory-title').textContent = isDragon ? 'THE CALDERA FALLS SILENT' : isWitch ? 'THE HOLLOW FALLS SILENT' : 'THE VIGIL ENDS';
-  $('victory-tip').textContent = isDragon
+  $('victory-title').textContent = isFang ? 'THE ECLIPSE BREAKS' : isDragon ? 'THE CALDERA FALLS SILENT' : isWitch ? 'THE HOLLOW FALLS SILENT' : 'THE VIGIL ENDS';
+  $('victory-tip').textContent = isFang
+    ? 'New Game+ : Korvath\'s shadow cuts deeper. Can you outrun the eclipse again?'
+    : isDragon
     ? 'New Game+ : the dragon\'s fire burns 25% hotter. Can you cool the caldera again?'
     : isWitch
       ? 'New Game+ : her hexes bite 25% harder. How deep will you walk the veil?'
       : 'New Game+ : he hits 25% harder each victory. How high can you go?';
-  $('btn-again').textContent = isDragon ? '↻  FACE THE DRAGON AGAIN  ↻' : isWitch ? '↻  FACE HER AGAIN  ↻' : '↻  FACE HIM AGAIN  ↻';
+  $('btn-again').textContent = isFang ? '↻  FACE THE ECLIPSE AGAIN  ↻' : isDragon ? '↻  FACE THE DRAGON AGAIN  ↻' : isWitch ? '↻  FACE HER AGAIN  ↻' : '↻  FACE HIM AGAIN  ↻';
   buildVictorySwitch();
   victoryScreen.classList.remove('hidden');
 }
@@ -4555,8 +4851,8 @@ function travelToWorld(id, source) {
   }
   stopBossMusic();
   chooseBoss(id);
-  showCenter(id === 'witch' ? 'THE NIGHTSHADE HOLLOW' : id === 'dragon' ? 'THE CALDERA' : 'THE ASHEN RING',
-    id === 'witch' ? 'a violet forest beyond the veil' : id === 'dragon' ? 'a burning hollow beneath the world' : 'the old meadow, far from the hollow');
+  showCenter(id === 'witch' ? 'THE NIGHTSHADE HOLLOW' : id === 'dragon' ? 'THE CALDERA' : id === 'fang' ? 'THE MOONLESS COURT' : 'THE ASHEN RING',
+    id === 'witch' ? 'a violet forest beyond the veil' : id === 'dragon' ? 'a burning hollow beneath the world' : id === 'fang' ? 'a court where the last light died' : 'the old meadow, far from the hollow');
 }
 function switchBossFromVictory(id) { travelToWorld(id, 'victory'); }
 function switchBossFromVigil(id) { travelToWorld(id, 'vigil'); }
@@ -4587,13 +4883,15 @@ function enterBossArena(id) {
   witchWorldGroup.visible = id === 'witch';
   dragonArenaGroup.visible = id === 'dragon';
   dragonWorldGroup.visible = id === 'dragon';
+  fangArenaGroup.visible = id === 'fang';
+  fangWorldGroup.visible = id === 'fang';
   applyWorldStyle(id);
   G.awakening = false; G.bossRevealed = false; G.bossRevealY = 0;
   G.witchAwakening = false; G.witchAwakeT = 0;
   G.bossActive = false; G.bossDead = false; G.fightTime = 0; G.paused = false;
   G.inArena = true; G.locked = false; lockHint.classList.add('hidden');
   clearBossHazards(); clearHexHazards();
-  resetBoss(); resetWitch(); resetDragon(); resetPlayer();
+  resetBoss(); resetWitch(); resetDragon(); resetFang(); resetPlayer();
   P.yaw = Math.PI; G.camYaw = 0; G.camPitch = 0.22;
   bossPlate.classList.add('hidden');
   setBossName(id);
@@ -4602,6 +4900,9 @@ function enterBossArena(id) {
     fogGate.material.opacity = 0.1;
   } else if (id === 'dragon') {
     P.pos.set(DRAGON_CENTER.x, 0, DRAGON_CENTER.z + 8); P.yaw = Math.PI;
+    fogGate.material.opacity = 0.1;
+  } else if (id === 'fang') {
+    P.pos.set(FANG_CENTER.x, 0, FANG_CENTER.z + 8); P.yaw = Math.PI;
     fogGate.material.opacity = 0.1;
   } else {
     P.pos.set(0, 0, 8); P.yaw = Math.PI;
@@ -4624,6 +4925,7 @@ function chooseBoss(id) {
   G.mode = 'play';
   if (id === 'witch') showCenter('MORGANA', 'the Nightshade Hex awaits — touch the crystal to summon her');
   else if (id === 'dragon') showCenter('VYTLES, THE DRAGON', 'the caldera breathes — touch the dragon stone to wake him');
+  else if (id === 'fang') showCenter('KORVATH, THE ECLIPSE FANG', 'the moonless court waits — touch the eclipse stone');
   else showCenter('THE ASHEN RING', 'approach the ashen stone and press E to wake the knight');
 }
 function beginWitch() {
@@ -4677,7 +4979,13 @@ $('btn-erase').onclick = () => eraseSave();
 addEventListener('beforeunload', () => saveGame(true));
 $('btn-again').onclick = () => {  victoryScreen.classList.add('hidden');
   stopBossMusic();
-  if (G.bossId === 'dragon') {
+  if (G.bossId === 'fang') {
+    G.ng++; G.bossDead = false; G.fightTime = 0; G.mode = 'play';
+    resetFang(); resetPlayer(); G.inArena = true;
+    P.pos.set(FANG_CENTER.x, 0, FANG_CENTER.z + 8); P.yaw = Math.PI;
+    updateFlasks(); saveGame();
+    showCenter('NEW VIGIL — NG+' + G.ng, 'his shadow strikes deeper. Touch the eclipse stone to call Korvath.');
+  } else if (G.bossId === 'dragon') {
     G.ng++; G.bossDead = false; G.fightTime = 0; G.mode = 'play';
     resetDragon(); resetPlayer(); G.inArena = true;
     P.pos.set(DRAGON_CENTER.x, 0, DRAGON_CENTER.z + 8); P.yaw = Math.PI;
@@ -5359,16 +5667,16 @@ function poseKnight(K, o, dt) {
     shLx = -0.45 - arch * 1.0; elL = -0.85 - arch * 0.7;
     shRz = -0.14 - arch * 0.4; shLz = 0.18 + arch * 0.3;
   } else if (S === 'windup') {
-    const a = BOSS_ATK[o.kind], k = sstep(clampJ(o.t / ((a && a.wind) || 0.6), 0, 1));
-    if (o.kind === 'fireball' || o.kind === 'firewave' || o.kind === 'meteor') {
+    const a = (o.atkTable || BOSS_ATK)[o.kind], k = sstep(clampJ(o.t / ((a && a.wind) || 0.6), 0, 1));
+    if (o.kind === 'fireball' || o.kind === 'firewave' || o.kind === 'meteor' || o.kind === 'duskwave' || o.kind === 'duskfire') {
       shRx = -0.55 - k * 2.0; elR = -0.55 + k * 0.3;
       shLx = -0.45 - k * 0.7; elL = -0.85 - k * 0.3;
       torsoX = 0.10 - k * 0.35; torsoY = -k * 0.15; headX = -k * 0.2; hipsDip = k * 0.06;
-    } else if (o.kind === 'slam' || o.kind === 'jump' || o.kind === 'pillars') {
+    } else if (o.kind === 'slam' || o.kind === 'jump' || o.kind === 'pillars' || o.kind === 'plunge') {
       shRx = -0.55 - k * 2.35; elR = -0.55 + k * 0.4; // blade to the sky
       torsoX = 0.10 - k * 0.32; torsoY = -k * 0.3; hipsDip = k * 0.10; // coil down
       shLx = -0.45 - k * 0.4; elL = -0.85 - k * 0.3; headX = -k * 0.25;
-    } else if (o.kind === 'thrust') {
+    } else if (o.kind === 'thrust' || o.kind === 'lunge') {
       shRx = -0.55 - k * 0.95; elR = -0.55 + k * 0.50; // arm levels, elbow locks
       torsoY = -k * 0.6; torsoX = 0.10 + k * 0.08; hipsDip = k * 0.05;
       shLx = -0.45 + k * 0.2; headY = -k * 0.2;
@@ -5382,19 +5690,19 @@ function poseKnight(K, o, dt) {
       shLx = -0.45 + k * 0.15;
     }
   } else if (S === 'swing') {
-    const a = BOSS_ATK[o.kind], dur = (a && a.swing) || 0.3;
+    const a = (o.atkTable || BOSS_ATK)[o.kind], dur = (a && a.swing) || 0.3;
     const s = sstep(clampJ(o.t / dur, 0, 1));
-    if (o.kind === 'fireball' || o.kind === 'firewave' || o.kind === 'meteor') {
+    if (o.kind === 'fireball' || o.kind === 'firewave' || o.kind === 'meteor' || o.kind === 'duskwave' || o.kind === 'duskfire') {
       shRx = -2.55 + s * 2.35; elR = -0.15;
       torsoX = -0.3 + s * 0.9; hipsDip = 0.08 + s * 0.12;
       shLx = -1.05 + s * 0.6; headX = s * 0.3;
       trailT = Math.sin(s * Math.PI) * 0.6;
-    } else if (o.kind === 'slam' || o.kind === 'jump' || o.kind === 'pillars') {
+    } else if (o.kind === 'slam' || o.kind === 'jump' || o.kind === 'pillars' || o.kind === 'plunge') {
       shRx = -2.9 + s * 2.7; elR = -0.15; torsoX = -0.22 + s * 0.85; hipsDip = 0.10 + s * 0.10;
       headX = s * 0.3; shLx = -0.85 + s * 0.5;
       trailT = Math.sin(s * Math.PI) * 0.6;
-      if (o.kind === 'jump') K.group.position.y += Math.sin(s * Math.PI) * 0.9;
-    } else if (o.kind === 'thrust') {
+      if (o.kind === 'jump' || o.kind === 'plunge') K.group.position.y += Math.sin(s * Math.PI) * (o.kind === 'plunge' ? 1.5 : 0.9);
+    } else if (o.kind === 'thrust' || o.kind === 'lunge') {
       torsoY = -0.6 + s * 1.1; shRx = -1.5 + s * 0.3; elR = -0.05;
       torsoX = 0.18 + s * 0.1; hipsDip = 0.05 + s * 0.06; headY = -0.2 + s * 0.35;
       trailT = Math.sin(s * Math.PI) * 0.6;
@@ -6103,13 +6411,350 @@ function dragonDie() {
   setLock(false);
   clearBossHazards();
   stopDragonBreath();
-  hideDragonBreathWarn(); hideDragonDiveWarn(); hideDragonBackdraftWarn();
+  hideDragonBreathWarn(); hideDragonDiveWarn(); hideDragonBackdraftWarn(); hideFangMarkWarn();
   telegraphEl.classList.add('hidden');
   sfx.death(); sfx.victory();
   spawnSparks(new THREE.Vector3(V.pos.x, 2.4, V.pos.z), 70, 0xff8a3a, 10);
   spawnRing(V.pos, 0xff6a2a, 12);
   spawnRing(V.pos, 0xffc861, 20);
   G.drops = bossDropsFor('dragon');
+  setTimeout(showDropScreen, 1600);
+}
+
+// ============ KORVATH, THE ECLIPSE FANG ============
+const FANG_ATK = {
+  rend: { wind: 0.62, swing: 0.30, recover: 0.92 },
+  lunge: { wind: 0.78, swing: 0.30, recover: 1.02 },
+  spin: { wind: 0.92, swing: 0.46, recover: 1.02 },
+  plunge: { wind: 1.10, swing: 0.30, recover: 1.18 },
+  duskwave: { wind: 0.98, swing: 0.42, recover: 1.02 },
+  duskfire: { wind: 1.06, swing: 0.44, recover: 1.08 },
+  afterimage: { wind: 0.58, swing: 0.30, recover: 1.70 },
+};
+function spawnFangEcho(x, z, delay, dmg, radius = 3.2) {
+  const mat = new THREE.MeshBasicMaterial({ color: 0xff2a5e, transparent: true, opacity: 0.34, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+  const grp = new THREE.Group(); grp.position.set(x, 0.08, z);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(radius * 0.72, radius, 48), mat);
+  ring.rotation.x = -Math.PI / 2; grp.add(ring);
+  const core = new THREE.Mesh(new THREE.CircleGeometry(radius * 0.6, 32), mat);
+  core.rotation.x = -Math.PI / 2; core.position.y = 0.002; grp.add(core);
+  scene.add(grp);
+  fangEchoes.push({ x, z, t: 0, delay, dmg, radius, grp, mat, done: false });
+}
+function updateFangEchoes(dt) {
+  for (let i = fangEchoes.length - 1; i >= 0; i--) {
+    const e = fangEchoes[i];
+    e.t += dt;
+    e.mat.opacity = 0.24 + Math.abs(Math.sin(e.t * 10)) * 0.22;
+    if (!e.done && e.t >= e.delay) {
+      e.done = true;
+      F.pos.set(e.x, 0, e.z); clampToActiveArena(F.pos, 2.4);
+      F.yaw = Math.atan2(P.pos.x - F.pos.x, P.pos.z - F.pos.z);
+      spawnRing(new THREE.Vector3(e.x, 0, e.z), 0xff2a5e, e.radius * 2.4);
+      spawnSparks(new THREE.Vector3(e.x, 1.0, e.z), 20, 0xff4d6d, 7);
+      sfx.slash(); G.shake = Math.max(G.shake, 0.28);
+      if (Math.hypot(P.pos.x - e.x, P.pos.z - e.z) < e.radius) damagePlayer(Math.round(e.dmg * (1 + G.ng * 0.18)), new THREE.Vector3(e.x, 0, e.z), 'afterimage');
+      e.mat.opacity = 0.85;
+    }
+    if (e.done) e.mat.opacity = Math.max(0, e.mat.opacity - dt * 4.2);
+    if (e.t > e.delay + 0.34) {
+      scene.remove(e.grp); e.mat.dispose();
+      fangEchoes.splice(i, 1);
+    }
+  }
+}
+function beginFang() {
+  if (G.bossId !== 'fang' || G.mode !== 'play' || G.bossActive || G.bossDead) return;
+  ARENA = ARENAS.fang;
+  F.maxHP = TUNE.fangHP + G.ng * 190;
+  F.hp = F.maxHP;
+  F.pos.set(FANG_CENTER.x, 0, FANG_CENTER.z - 5);
+  F.yaw = Math.atan2(P.pos.x - F.pos.x, P.pos.z - F.pos.z);
+  F.state = 'intro'; F.t = 0; F.decideCd = 0.9; F.attackKind = ''; F.hasHit = false;
+  F.phase2 = false; F.staggerAcc = 0; F.deadT = 0; F.lastAttack = '';
+  fangK.group.position.copy(F.pos); fangK.group.rotation.y = F.yaw;
+  fangK.group.scale.setScalar(FANG_BASE_SCALE);
+  fangK.group.visible = true; fangShadow.visible = true;
+  hideFangMarkWarn(); hideDragonBreathWarn(); hideDragonDiveWarn(); hideDragonBackdraftWarn();
+  clearFangEchoes();
+  G.bossActive = true; G.bossDead = false; G.fightTime = 0;
+  bossPlate.classList.remove('hidden'); setBossName('fang'); startBossMusic(); setLock(true);
+  bossNameEl.textContent = 'KORVATH  ·  THE ECLIPSE FANG';
+  sfx.roar(); G.shake = Math.max(G.shake, 0.7);
+  spawnRing(F.pos, 0xff2a5e, 14);
+  spawnRing(F.pos, 0x8b5cff, 8);
+  spawnSparks(new THREE.Vector3(F.pos.x, 2.0, F.pos.z), 48, 0xff4d6d, 8);
+  showCenter('KORVATH, THE ECLIPSE FANG', 'the last light leaves the court');
+}
+function touchFangStone() {
+  if (!G.inArena || G.bossActive || G.bossDead || P.state === 'dead') return;
+  P.state = 'idle'; P.t = 0;
+  spawnRing(new THREE.Vector3(fangStonePos.x, 0, fangStonePos.z), 0xff2a5e, 6);
+  spawnSparks(new THREE.Vector3(fangStonePos.x, 1.6, fangStonePos.z), 24, 0xff4d6d, 6);
+  sfx.pillar();
+  beginFang();
+}
+function fangDecide() {
+  hideFangMarkWarn();
+  const d = dist2D(F.pos, P.pos);
+  const opts = [];
+  if (d < 4.2) opts.push('rend', 'rend', 'spin', 'lunge', 'duskwave');
+  else if (d < 9.0) opts.push('lunge', 'rend', 'duskwave', 'plunge');
+  else opts.push('lunge', 'duskfire', 'duskwave', 'plunge');
+  if (F.phase2) opts.push('afterimage', 'afterimage', 'duskfire', 'duskwave', 'plunge', 'spin');
+  let kind = opts[Math.floor(Math.random() * opts.length)];
+  if (kind === F.lastAttack && opts.length > 2) {
+    const alt = opts.filter(o => o !== kind);
+    kind = alt[Math.floor(Math.random() * alt.length)];
+  }
+  F.lastAttack = kind;
+  F.attackKind = kind; F.state = 'windup'; F.t = 0; F.hasHit = false;
+  const say = {
+    rend: 'THE BLACK BLADE COMES TWICE — ROLL THROUGH',
+    lunge: 'HE STEPS THROUGH THE ECLIPSE — SIDESTEP',
+    spin: 'THE FANG WHIRLS — LEAVE THE RING',
+    plunge: 'HE LEAPS — LEAVE THE MARK',
+    duskwave: 'DUSK RUSHES OUTWARD — ROLL IT',
+    duskfire: 'ECLIPSE FIRE GATHERS — KEEP MOVING',
+    afterimage: 'HIS SHADOW STRIKES FIRST — WATCH THE RINGS',
+  }[kind];
+  if (say) showSub(say);
+  if (kind === 'plunge') {
+    F.mark.copy(P.pos);
+    ensureFangMarkWarn();
+    fangMarkWarn.position.set(F.mark.x, 0.075, F.mark.z);
+    fangMarkWarn.visible = true;
+    fangMarkWarnMat.opacity = 0.34;
+    sfx.cast();
+  } else if (kind === 'duskfire') {
+    sfx.cast();
+  } else if (kind === 'duskwave') {
+    sfx.cast();
+  }
+}
+function fangStrike(kind) {
+  const d = dist2D(F.pos, P.pos);
+  const mult = 1 + G.ng * 0.18;
+  const fwd = forwardOf(F.yaw);
+  if (kind === 'rend') {
+    if (d < 4.6 && inArc(F.pos, F.yaw, P.pos, 4.9, 1.30)) damagePlayer(Math.round(TUNE.fangDmg.rend * mult), F.pos, 'rend');
+    spawnRing(F.pos, 0xff2a5e, 5.0);
+    spawnSparks(new THREE.Vector3(F.pos.x + fwd.x * 2.2, 1.9, F.pos.z + fwd.z * 2.2), 24, 0xff4d6d, 7);
+    fangAfterRend(mult);
+    sfx.slash(); sfx.slam();
+  } else if (kind === 'lunge') {
+    const oldX = F.pos.x, oldZ = F.pos.z;
+    const ang = Math.atan2(P.pos.x - F.pos.x, P.pos.z - F.pos.z);
+    F.pos.set(P.pos.x - Math.sin(ang) * 2.0, 0, P.pos.z - Math.cos(ang) * 2.0);
+    clampToActiveArena(F.pos, 2.2); F.yaw = ang;
+    spawnSparks(new THREE.Vector3(oldX, 1.3, oldZ), 26, 0xff2a5e, 7);
+    spawnSparks(new THREE.Vector3(F.pos.x, 1.5, F.pos.z), 22, 0x8b5cff, 6);
+    spawnRing(new THREE.Vector3(F.pos.x, 0, F.pos.z), 0xff2a5e, 5.2);
+    const dd = dist2D(F.pos, P.pos);
+    if (dd < 5.0 && inArc(F.pos, F.yaw, P.pos, 5.4, 1.05)) damagePlayer(Math.round(TUNE.fangDmg.lunge * mult), F.pos, 'lunge');
+    G.shake = Math.max(G.shake, 0.35);
+    sfx.dash(); sfx.slash();
+  } else if (kind === 'spin') {
+    spawnRing(F.pos, 0xff2a5e, 10.5);
+    spawnRing(F.pos, 0x8b5cff, 7.2);
+    spawnSparks(new THREE.Vector3(F.pos.x, 1.4, F.pos.z), 34, 0xff4d6d, 9);
+    if (d < 5.2) damagePlayer(Math.round(TUNE.fangDmg.spin * mult), F.pos, 'spin');
+    G.shake = Math.max(G.shake, 0.5); sfx.slam();
+  } else if (kind === 'plunge') {
+    hideFangMarkWarn();
+    F.pos.set(F.mark.x, 0, F.mark.z); clampToActiveArena(F.pos, 2.4);
+    F.yaw = Math.atan2(P.pos.x - F.pos.x, P.pos.z - F.pos.z);
+    spawnRing(F.pos, 0xff2a5e, 13.5);
+    spawnRing(F.pos, 0x8b5cff, 20);
+    spawnSparks(new THREE.Vector3(F.pos.x, 1.2, F.pos.z), 46, 0xff4d6d, 9);
+    for (let i = 0; i < 6; i++) {
+      const a = i / 6 * Math.PI * 2;
+      spawnHexPillar(F.pos.x + Math.cos(a) * 3.4, F.pos.z + Math.sin(a) * 3.4, 0.28 + i * 0.02, 1.15, Math.round(TUNE.fangDmg.plunge * mult * 0.55), 1, false, 'fang');
+    }
+    sfx.slam(); sfx.pillar(); G.shake = Math.max(G.shake, 0.75);
+    if (Math.hypot(P.pos.x - F.mark.x, P.pos.z - F.mark.z) < 5.35) damagePlayer(Math.round(TUNE.fangDmg.plunge * mult), F.pos, 'plunge');
+  } else if (kind === 'duskwave') {
+    spawnFireWave(F.pos.x, F.pos.z, Math.round(TUNE.fangDmg.duskwave * mult), 10, FANG_R + 1.2, 0xff2a5e);
+    spawnHexPillar(P.pos.x, P.pos.z, 0.98, 1.7, Math.round(TUNE.fangDmg.duskwave * mult * 0.8), 1, false, 'fang');
+    spawnSparks(new THREE.Vector3(F.pos.x, 1.2, F.pos.z), 30, 0xff2a5e, 8);
+    G.shake = Math.max(G.shake, 0.45); sfx.cast(); sfx.slam();
+  } else if (kind === 'duskfire') {
+    const px = P.pos.x, pz = P.pos.z;
+    const spots = [
+      [px, pz], [px + 3.6, pz], [px - 3.6, pz], [px, pz + 3.6], [px, pz - 3.6],
+    ];
+    for (let i = 0; i < spots.length; i++) {
+      let x = spots[i][0], z = spots[i][1];
+      const dx = x - FANG_CENTER.x, dz = z - FANG_CENTER.z;
+      const dd = Math.hypot(dx, dz), lim = FANG_R - 1.6;
+      if (dd > lim) { x = FANG_CENTER.x + dx / dd * lim; z = FANG_CENTER.z + dz / dd * lim; }
+      spawnHexPillar(x, z, 0.84 + i * 0.05, i === 0 ? 2.0 : 1.65, Math.round(TUNE.fangDmg.duskfire * mult), 1, false, 'fang');
+    }
+    spawnSparks(new THREE.Vector3(F.pos.x + fwd.x * 1.8, 1.8, F.pos.z + fwd.z * 1.8), 32, 0x8b5cff, 8);
+    G.shake = Math.max(G.shake, 0.35); sfx.cast(); sfx.pillar();
+  } else if (kind === 'afterimage') {
+    const side = new THREE.Vector3(Math.cos(F.yaw), 0, -Math.sin(F.yaw));
+    const marks = [
+      [P.pos.x, P.pos.z],
+      [P.pos.x + side.x * 3.1, P.pos.z + side.z * 3.1],
+      [P.pos.x - side.x * 3.1, P.pos.z - side.z * 3.1],
+    ];
+    for (let i = 0; i < marks.length; i++) spawnFangEcho(marks[i][0], marks[i][1], 0.44 + i * 0.38, TUNE.fangDmg.afterimage, i === 0 ? 2.6 : 2.5);
+    spawnSparks(new THREE.Vector3(F.pos.x, 1.9, F.pos.z), 36, 0xff2a5e, 9);
+    spawnRing(F.pos, 0x8b5cff, 8);
+    G.shake = Math.max(G.shake, 0.5); sfx.dash(); sfx.roar();
+  }
+}
+function fangAfterRend(mult) {
+  setTimeout(() => {
+    if (!G.bossActive || F.state === 'dead' || G.mode !== 'play') return;
+    const d = dist2D(F.pos, P.pos);
+    if (d < 4.6 && inArc(F.pos, F.yaw, P.pos, 4.9, 1.30)) damagePlayer(Math.round(TUNE.fangDmg.rend * mult * 0.85), F.pos, 'rend');
+    spawnRing(F.pos, 0xff4d6d, 3.8);
+    spawnSparks(new THREE.Vector3(F.pos.x + Math.sin(F.yaw) * 2.0, 1.7, F.pos.z + Math.cos(F.yaw) * 2.0), 16, 0x8b5cff, 6);
+    sfx.slash();
+  }, 180);
+}
+function updateFang(dt) {
+  F.t += dt;
+  F.animT += dt;
+  if (G.bossActive && P.state !== 'dead') G.fightTime += dt;
+  G.hazardsDirty = true;
+  if (fangMarkWarn && fangMarkWarn.visible) {
+    fangMarkWarnMat.opacity = 0.26 + Math.abs(Math.sin(F.t * 8.5)) * 0.24;
+    fangMarkWarn.scale.setScalar(1 + Math.sin(F.t * 8.5) * 0.03);
+  }
+  updateFangEchoes(dt);
+  const d = dist2D(F.pos, P.pos);
+  const toP = Math.atan2(P.pos.x - F.pos.x, P.pos.z - F.pos.z);
+  switch (F.state) {
+    case 'dormant':
+      break;
+    case 'intro':
+      F.yaw += angDiff(toP, F.yaw) * Math.min(1, 2.8 * dt);
+      if (F.t > 1.65) { F.state = 'idle'; F.decideCd = 0.55; G.fightTime = 0; }
+      break;
+    case 'rage':
+      F.yaw += angDiff(toP, F.yaw) * Math.min(1, 2.4 * dt);
+      if (F.t > 1.15) { F.state = 'idle'; F.decideCd = 0.3; }
+      break;
+    case 'idle': {
+      F.yaw += angDiff(toP, F.yaw) * Math.min(1, (F.phase2 ? 3.4 : 2.7) * dt);
+      F.decideCd = Math.max(0, F.decideCd - dt);
+      if (P.state !== 'dead') {
+        const spd = TUNE.fangSpeed * (F.phase2 ? 1.22 : 1) * (1 + G.ng * 0.05);
+        if (d > 4.2) {
+          F.pos.x += Math.sin(F.yaw) * spd * dt;
+          F.pos.z += Math.cos(F.yaw) * spd * dt;
+        } else if (d < 2.8) {
+          F.pos.x -= Math.sin(F.yaw) * spd * dt * 0.7;
+          F.pos.z -= Math.cos(F.yaw) * spd * dt * 0.7;
+        } else {
+          F.pos.x += Math.cos(F.yaw) * spd * dt * 0.25;
+          F.pos.z -= Math.sin(F.yaw) * spd * dt * 0.25;
+        }
+        clampToActiveArena(F.pos, 2.2);
+      }
+      if (F.decideCd <= 0 && P.state !== 'dead') fangDecide();
+      break;
+    }
+    case 'windup': {
+      F.yaw += angDiff(toP, F.yaw) * Math.min(1, (F.attackKind === 'lunge' ? 2.8 : 1.5) * dt);
+      const cast = FANG_ATK[F.attackKind] || FANG_ATK.rend;
+      if (F.attackKind === 'lunge' && F.t > cast.wind * 0.55) {
+        F.pos.x += Math.sin(F.yaw) * 5.0 * dt;
+        F.pos.z += Math.cos(F.yaw) * 5.0 * dt;
+        clampToActiveArena(F.pos, 2.2);
+      }
+      if (F.t >= cast.wind) {
+        fangStrike(F.attackKind);
+        F.state = 'recover'; F.t = 0; F.hasHit = true;
+        hideFangMarkWarn();
+      }
+      break;
+    }
+    case 'recover': {
+      F.yaw += angDiff(toP, F.yaw) * Math.min(1, 1.8 * dt);
+      const cast = FANG_ATK[F.attackKind] || FANG_ATK.rend;
+      if (F.t >= cast.recover) { F.state = 'idle'; F.t = 0; F.decideCd = (F.phase2 ? 0.16 : 0.34) + Math.random() * 0.38; }
+      break;
+    }
+    case 'stagger':
+      if (F.t > 1.05) { F.state = 'idle'; F.t = 0; F.decideCd = 0.28; }
+      break;
+    case 'dead':
+      F.deadT += dt;
+      if (F.deadT > 2.2) { fangK.group.visible = false; fangShadow.visible = false; }
+      break;
+  }
+}
+function poseFang(dt) {
+  const p = fangK.parts;
+  const moving = F.state === 'idle' && dist2D(F.pos, P.pos) > 2.7;
+  poseKnight(fangK, {
+    moving, sprint: false, bossStep: true, state: F.state, t: F.t, kind: F.attackKind,
+    atkTable: FANG_ATK, pos: F.pos, yaw: F.yaw, enrage: F.phase2,
+  }, dt);
+  const phase = F.phase2 ? 1 : 0;
+  p.chest.position.y = p._chestY + Math.sin(F.animT * 6.2) * 0.009;
+  p.tail.rotation.x = 0.52 + Math.sin(F.animT * 1.4) * 0.06;
+  p.tail.rotation.y = 0.30 + Math.sin(F.animT * 1.05) * 0.05;
+  for (let i = 0; i < p.tailSegs.length; i++) {
+    const seg = p.tailSegs[i];
+    seg.rotation.y = Math.sin(F.animT * 2.4 - i * 0.6) * (0.16 + phase * 0.05);
+    seg.rotation.x = Math.sin(F.animT * 1.8 - i * 0.45) * 0.08;
+  }
+  p.auraMat.opacity = 0.12 + phase * 0.10 + (F.state === 'windup' ? 0.06 : 0);
+  p.auraRing.scale.setScalar(1 + Math.sin(F.animT * 2.1) * 0.035);
+  p.auraRing.rotation.z = F.animT * 0.15;
+  const charging = F.state === 'windup';
+  p.swordGlow.material.opacity += (((charging ? 0.42 + Math.sin(F.animT * 14) * 0.13 : 0.08 + phase * 0.10)) - p.swordGlow.material.opacity) * Math.min(1, 8 * dt);
+  p.visor.material.emissiveIntensity = (F.phase2 ? 2.2 : 0.8) + Math.sin(F.animT * 9) * 0.25 + (charging ? 0.6 : 0);
+  for (const eye of p.eyeGlows) eye.material.opacity = 0.55 + phase * 0.3 + Math.sin(F.animT * 5.2) * 0.15;
+  p.keyLight.intensity = 32 + phase * 8 + (charging ? 7 : 0) + Math.sin(F.animT * 6.3) * 2;
+  p.fillLight.intensity = 10 + phase * 4 + Math.sin(F.animT * 4.1 + 1) * 1.5;
+}
+function damageFang(dmg, poiseDmg = 24) {
+  if (!G.bossActive || F.state === 'dead' || F.state === 'rage' || G.mode !== 'play') return;
+  dmg *= P.mods.dmg;
+  F.hp = Math.max(0, F.hp - dmg);
+  F.staggerAcc += poiseDmg;
+  const hitPos = new THREE.Vector3(F.pos.x + (Math.random() - 0.5) * 1.1, 1.7 + Math.random() * 1.2, F.pos.z + (Math.random() - 0.5) * 1.1);
+  spawnSparks(hitPos, 12, 0xff5d78, 5);
+  sfx.hitFlesh();
+  G.hitstop = 0.035; G.shake = Math.min(0.5, G.shake + 0.16);
+  if (!F.phase2 && F.hp < F.maxHP * 0.5 && F.hp > 0) {
+    F.phase2 = true; F.state = 'rage'; F.t = 0; F.staggerAcc = 0;
+    hideFangMarkWarn(); clearFangEchoes(); clearBossHazards(); clearHexHazards();
+    sfx.roar(); G.shake = Math.max(G.shake, 0.9); G.hitstop = 0.1;
+    spawnRing(F.pos, 0xff2a5e, 12);
+    spawnRing(F.pos, 0x8b5cff, 20);
+    spawnSparks(new THREE.Vector3(F.pos.x, 2.2, F.pos.z), 58, 0xff4d6d, 9);
+    showCenter('THE ECLIPSE DEVOURS', 'Korvath draws the last light into his blade');
+    bossNameEl.textContent = 'KORVATH  ·  THE ECLIPSE UNBOUND';
+    intensifyBossMusic();
+  } else if (F.staggerAcc >= 120 && F.state !== 'stagger' && F.hp > 0) {
+    F.staggerAcc = 0; F.state = 'stagger'; F.t = 0;
+    hideFangMarkWarn();
+    showSub('KORVATH STAGGERS — STRIKE NOW');
+    sfx.stagger(); G.hitstop = 0.12;
+  }
+  if (F.hp <= 0) fangDie();
+}
+function fangDie() {
+  F.state = 'dead'; F.t = 0; F.deadT = 0;
+  G.bossDead = true; G.bossActive = false; G.defeated.fang = true;
+  stopBossMusic();
+  setLock(false);
+  clearBossHazards(); clearHexHazards();
+  hideFangMarkWarn();
+  clearFangEchoes();
+  telegraphEl.classList.add('hidden');
+  sfx.death(); sfx.victory();
+  spawnSparks(new THREE.Vector3(F.pos.x, 2.0, F.pos.z), 64, 0xff4d6d, 10);
+  spawnRing(F.pos, 0xff2a5e, 12);
+  spawnRing(F.pos, 0x8b5cff, 20);
+  G.drops = bossDropsFor('fang');
   setTimeout(showDropScreen, 1600);
 }
 
@@ -6223,15 +6868,6 @@ function updateHUD() {
   bossFill.style.width = (bk * 100) + '%';
   bossShown += (bk - bossShown) * 0.04; bossGhost.style.width = (Math.max(bk, bossShown) * 100) + '%';
   vignette.classList.toggle('lowhp', hpk < 0.3);
-  // equipped spoils display
-  if (spoilsSlotEl) {
-    if (P.equippedSpoils) {
-      const s = ALL_SPOILS.find(x => x.id === P.equippedSpoils);
-      spoilsSlotEl.textContent = s ? s.name + ' (' + s.rarity.toUpperCase() + ')' : '—';
-    } else {
-      spoilsSlotEl.textContent = '—';
-    }
-  }
   const tracking = lockOnActive() && G.mode === 'play';
   lockHint.classList.toggle('hidden', !tracking);
   // interact prompt
@@ -6240,6 +6876,9 @@ function updateHUD() {
     else interactPrompt.classList.add('hidden');
   } else if (G.mode === 'play' && !G.awakening && !G.witchAwakening && !G.witchLunarCutscene && G.bossId === 'dragon') {
     if (G.inArena && !G.bossActive && !G.bossDead && near(dragonStonePos, P.pos, 3.8)) { interactPrompt.classList.remove('hidden'); interactText.textContent = 'to touch the dragon stone'; }
+    else interactPrompt.classList.add('hidden');
+  } else if (G.mode === 'play' && !G.awakening && !G.witchAwakening && !G.witchLunarCutscene && G.bossId === 'fang') {
+    if (G.inArena && !G.bossActive && !G.bossDead && near(fangStonePos, P.pos, 3.8)) { interactPrompt.classList.remove('hidden'); interactText.textContent = 'to touch the eclipse stone'; }
     else interactPrompt.classList.add('hidden');
   } else if (G.mode === 'play' && !G.awakening && !G.witchAwakening && !G.witchLunarCutscene && G.bossId === 'duncan') {
     if (!G.inArena && near(bonfirePos, P.pos, 3.2)) { interactPrompt.classList.remove('hidden'); interactText.textContent = 'to rest at the bonfire'; }
@@ -6254,7 +6893,32 @@ function updateWeaponLabel() {
   const w = WEAPONS[P.weapon];
   weaponLabelEl.textContent = '» ' + w.name + ' · ' + w.wt;
 }
+function hideSpoilTip() {
+  if (spoilTipEl) spoilTipEl.classList.add('hidden');
+}
+function showSpoilTip(row, s) {
+  if (!spoilTipEl) return;
+  const title = document.createElement('b');
+  title.className = 'rarity-' + s.rarity;
+  title.textContent = s.name;
+  const desc = document.createElement('span');
+  desc.textContent = s.desc;
+  spoilTipEl.innerHTML = '';
+  spoilTipEl.appendChild(title);
+  spoilTipEl.appendChild(desc);
+  spoilTipEl.classList.remove('hidden');
+  const r = row.getBoundingClientRect();
+  const tw = spoilTipEl.offsetWidth, th = spoilTipEl.offsetHeight;
+  let x = r.right + 10;
+  if (x + tw > innerWidth - 8) x = r.left - tw - 10;
+  let y = r.top + r.height / 2 - th / 2;
+  x = Math.max(8, x);
+  y = Math.max(8, Math.min(innerHeight - th - 8, y));
+  spoilTipEl.style.left = x + 'px';
+  spoilTipEl.style.top = y + 'px';
+}
 function renderWeaponList() {
+  hideSpoilTip();
   if (inventoryEl.classList.contains('hidden')) return;
   const w = WEAPONS[P.weapon];
   invStatsEl.innerHTML = 'VIGOR <b>' + Math.ceil(P.hp) + '/' + P.maxHP + '</b> · ENDURANCE <b>' + Math.ceil(P.st) + '/' + P.stMax + '</b> · FLASKS <b>' + P.flasks + '/' + TUNE.flasks + '</b>';
@@ -6262,10 +6926,26 @@ function renderWeaponList() {
   // Spoils slot
   const es = P.equippedSpoils ? ALL_SPOILS.find(x => x.id === P.equippedSpoils) : null;
   if (spoilsSlotEl) {
+    spoilsSlotEl.innerHTML = '';
     if (es) {
-      spoilsSlotEl.innerHTML = '<span class="rarity-' + es.rarity + '">' + es.name + '</span> <span class="unequip-hint" onclick="unequipSpoils()">(unequip)</span>';
+      const nameEl = document.createElement('span');
+      nameEl.className = 'rarity-' + es.rarity;
+      nameEl.textContent = es.name;
+      const unequipEl = document.createElement('span');
+      unequipEl.className = 'unequip-hint';
+      unequipEl.textContent = ' (unequip)';
+      unequipEl.onclick = unequipSpoils;
+      spoilsSlotEl.appendChild(nameEl);
+      spoilsSlotEl.appendChild(unequipEl);
     } else {
-      spoilsSlotEl.innerHTML = '<span class="none">— empty — <span class="hint">(click a spoil to equip)</span></span>';
+      const emptyEl = document.createElement('span');
+      emptyEl.className = 'none';
+      emptyEl.textContent = '— empty — ';
+      const hintEl = document.createElement('span');
+      hintEl.className = 'hint';
+      hintEl.textContent = '(click a spoil to equip)';
+      emptyEl.appendChild(hintEl);
+      spoilsSlotEl.appendChild(emptyEl);
     }
   }
   // Weapons
@@ -6285,15 +6965,35 @@ function renderWeaponList() {
     if (owned) row.onclick = () => equipWeapon(id);
     weaponListEl.appendChild(row);
   });
-  // Spoils list
-  const spoilsHtml = P.spoils.length
-    ? P.spoils.map(sid => {
+  // Spoils list — one slot, click to equip or swap
+  const spoilsListEl = $('spoils-list');
+  spoilsListEl.innerHTML = '';
+  if (P.spoils.length) {
+    P.spoils.forEach(sid => {
       const s = ALL_SPOILS.find(x => x.id === sid);
-      const eq = s && P.equippedSpoils === sid;
-      return '<div class="spoil rarity-' + s.rarity + (eq ? ' equipped' : '') + '" onclick="equipSpoils(\'' + sid + '\')">' + s.name + (eq ? ' <span class="eq-tag">EQUIPPED</span>' : '') + '</div>';
-    }).join('')
-    : '<div class="spoil none">None yet — defeat Ser Duncan</div>';
-  $('spoils-list').innerHTML = spoilsHtml;
+      if (!s) return;
+      const eq = P.equippedSpoils === sid;
+      const row = document.createElement('div');
+      row.className = 'spoil rarity-' + s.rarity + (eq ? ' equipped' : '');
+      row.textContent = s.name;
+      if (eq) {
+        const tag = document.createElement('span');
+        tag.className = 'eq-tag';
+        tag.textContent = 'EQUIPPED';
+        row.appendChild(document.createTextNode(' '));
+        row.appendChild(tag);
+      }
+      row.onmouseenter = () => showSpoilTip(row, s);
+      row.onmouseleave = hideSpoilTip;
+      row.onclick = () => { hideSpoilTip(); equipSpoils(sid); };
+      spoilsListEl.appendChild(row);
+    });
+  } else {
+    const empty = document.createElement('div');
+    empty.className = 'spoil none';
+    empty.textContent = 'None yet — defeat Ser Duncan';
+    spoilsListEl.appendChild(empty);
+  }
 }
 function toggleInventory() {
   if (inventoryEl.classList.contains('hidden')) {
@@ -6305,6 +7005,7 @@ function toggleInventory() {
   } else closeInventory();
 }
 function closeInventory() {
+  hideSpoilTip();
   inventoryEl.classList.add('hidden');
   G.paused = false;
 }
@@ -6436,6 +7137,27 @@ function loop() {
     dragonStoneGlow.material.opacity = 0.5 + Math.sin(t * 3.1) * 0.14;
     dragonStoneMat.emissiveIntensity = 2.6 + Math.sin(t * 4.3) * 0.7;
   }
+  if (fangWorldGroup.visible) {
+    for (const m of fangMotes) {
+      const u = m.userData;
+      u.a += dt * u.speed;
+      m.position.x = FANG_CENTER.x + Math.cos(u.a) * u.rr;
+      m.position.z = FANG_CENTER.z + Math.sin(u.a) * u.rr;
+      m.position.y = u.y + Math.sin(t * 0.8 + u.bob) * 0.55;
+      m.material.opacity = 0.28 + Math.sin(t * 2.4 + u.bob) * 0.18;
+    }
+    if (fangMoonRing) {
+      fangMoonRing.rotation.z = t * 0.06;
+      fangMoonRing.material.opacity = 0.64 + Math.sin(t * 1.2) * 0.12;
+    }
+  }
+  if (fangStone && fangArenaGroup.visible) {
+    fangStone.rotation.y = t * 0.7;
+    fangStone.position.y = 2.45 + Math.sin(t * 1.8) * 0.10;
+    fangStoneGlow.material.opacity = 0.38 + Math.sin(t * 3.3) * 0.14;
+    fangStoneMat.emissiveIntensity = 2.3 + Math.sin(t * 4.6) * 0.8 + (F.phase2 ? 1.2 : 0);
+    fangLight.intensity = 54 + Math.sin(t * 4.2) * 9 + (F.phase2 ? 10 : 0);
+  }
   if (!G.awakening && altarGem.visible) {
     altarGem.rotation.y = t * 1.1;
     altarGem.position.y = 1.52 + Math.sin(t * 1.8) * 0.04;
@@ -6451,12 +7173,14 @@ function loop() {
     witchLight.intensity = 38 + Math.sin(t * 4.2) * 7;
   }
   fogGate.material.opacity = (G.inArena ? 0.1 : 0.5) + Math.sin(t * 1.7) * 0.06;
-  warm.intensity = G.bossId === 'witch' || G.bossId === 'dragon' ? 0 : 24 + Math.sin(t * 9) * 4;
+  warm.intensity = G.bossId === 'witch' || G.bossId === 'dragon' || G.bossId === 'fang' ? 0 : 24 + Math.sin(t * 9) * 4;
   // embers
   if (G.bossId === 'witch') {
     if (Math.random() < 0.32) spawnSparks(new THREE.Vector3(WITCH_CENTER.x + (Math.random() - 0.5) * 24, 0.5, WITCH_CENTER.z + (Math.random() - 0.5) * 24), 1, Math.random() < 0.5 ? 0x9b5cff : 0xd9b7ff, 1.2);
   } else if (G.bossId === 'dragon') {
     if (Math.random() < 0.5) spawnSparks(new THREE.Vector3(DRAGON_CENTER.x + (Math.random() - 0.5) * 30, 0.4, DRAGON_CENTER.z + (Math.random() - 0.5) * 30), 1, Math.random() < 0.5 ? 0xff6a2a : 0xffc861, 1.6);
+  } else if (G.bossId === 'fang') {
+    if (Math.random() < 0.4) spawnSparks(new THREE.Vector3(FANG_CENTER.x + (Math.random() - 0.5) * 30, 0.4, FANG_CENTER.z + (Math.random() - 0.5) * 30), 1, Math.random() < 0.5 ? 0xff2a5e : 0x8b5cff, 1.4);
   } else if (Math.random() < 0.25) spawnSparks(new THREE.Vector3((Math.random()-0.5)*20, 0.5, (Math.random()-0.5)*20 + 6), 1, Math.random() < 0.5 ? 0xff8c3a : 0x555566, 1.2);
   updateSparks(dt);
   for (let i = rings.length - 1; i >= 0; i--) {
@@ -6479,9 +7203,11 @@ function loop() {
     if (!interacting && G.bossId === 'duncan' && (G.bossActive || B.state === 'dormant')) updateBoss(dt);
     if (!interacting && G.bossId === 'witch') updateWitch(dt);
     if (!interacting && G.bossId === 'dragon' && V.state !== 'dormant') updateDragon(dt);
+    if (!interacting && G.bossId === 'fang' && F.state !== 'dormant') updateFang(dt);
     if (!interacting && !G.witchLunarCutscene) { resolveStoneCollision(); resolveBossCollision(); }
     if (G.bossId === 'witch') { updateHexBolts(dt); updateHexPillars(dt); updateHexWaves(dt); updateMoonBeams(dt); updateSkeletons(dt); }
     else if (G.bossId === 'dragon') { updatePillars(dt); updateFireWaves(dt); }
+    else if (G.bossId === 'fang') { updatePillars(dt); updateHexPillars(dt); updateFireWaves(dt); }
     else { updatePillars(dt); updateFireBolts(dt); updateFireWaves(dt); }
     if (G.bossId === 'duncan') { updateInfernoOrbVisual(dt); updateInfernoMark(dt); updateBossFireAura(dt); }
   }
@@ -6493,6 +7219,7 @@ function loop() {
   if (bossVisible) poseKnight(bossK, { moving: bMoving, sprint: false, bossStep: true, state: B.state, t: B.t, kind: B.attackKind, pos: B.pos, yaw: B.yaw, yOffset: G.awakening ? G.bossRevealY : 0, enrage: B.phase2 }, dt);
   if (witchK.group.visible) poseWitch(dt);
   if (dragonK.group.visible) { poseDragon(dt); updateDragonBreathFX(dt); }
+  if (fangK.group.visible) poseFang(dt);
   const clothNormals = (frameNo % 3) === 0;
   animateCloth(playerK.parts.cape, t, clothNormals); animateCloth(playerK.parts.cape2, t * 1.07, clothNormals);
   if (bossVisible) {
@@ -6502,11 +7229,18 @@ function loop() {
     const panels = witchK.parts.skirtPanels;
     for (let i = 0; i < panels.length; i++) animateCloth(panels[i], t * 0.85 + i * 0.17, clothNormals);
   }
+  if (fangK.group.visible) {
+    animateCloth(fangK.parts.cape, t * 1.02, clothNormals);
+    animateCloth(fangK.parts.cape2, t * 1.09, clothNormals);
+  }
   playerShadow.position.set(P.pos.x, 0.025, P.pos.z);
   bossShadow.position.set(B.pos.x, 0.025, B.pos.z);
   bossShadow.visible = bossK.group.visible && B.state !== 'dead' && !(B.state === 'inferno' && B.infernoFormed);
   witchShadow.position.set(W.pos.x, 0.025, W.pos.z);
   witchShadow.visible = G.bossId === 'witch' && witchK.group.visible && W.state !== 'dead';
+  fangShadow.position.set(F.pos.x, 0.025, F.pos.z);
+  fangShadow.visible = G.bossId === 'fang' && fangK.group.visible && F.state !== 'dead';
+  fangShadow.scale.setScalar(1.0 + Math.sin(t * 1.9) * 0.03);
   updateCamera(dt);
   if ((hudTick++ % 3) === 0) updateHUD();
   gradePass.uniforms.uTime.value = t;
@@ -6519,15 +7253,16 @@ updateWeaponLabel();
 loop();
 
 // expose for automated checks
-window.__game = { G, P, B, W, V, TUNE, WEAPONS, SPOILS, BOSS_SHARDS, ALL_SPOILS, RARITY, DROP_POOL, ARENAS, BOSSES, BOSS_ORDER, bossUnlocked, bossShardFor, bossDropsFor, chooseBoss, enterBossArena, beginWitch, resetWitch, beginDragon, resetDragon, enterArena, touchStone, updateAwakening, touchWitchStone, touchDragonStone, updateWitchAwakening, updateDragon, poseDragon, dragonStrike, dragonDecide, spawnDragonBreath, spawnDragonStorm, stonePos, witchStonePos, dragonStonePos, restAtBonfire, damageBoss, damageWitch, damageDragon, damagePlayer, equipWeapon, toggleInventory, equipSpoils, unequipSpoils, rollDrops, claimDrops, showDropScreen, spawnPillarBarrage, spawnInfernoBarrage, spawnMeteorStorm, spawnFireBoltVolley, clearBossHazards, clearHexHazards, pillars, fireBolts, fireWaves, hexPillars, hexBolts, hexWaves, skeletons, moonBeams, lunarAvatar, summonSkeletons, spawnMoonBeamVolley, damageSkeleton, damageSkeletonsInArc, saveGame, loadGame, eraseSave, applyWorldStyle, switchBossFromVictory, switchBossFromVigil, toggleVigilMenu, closeVigilMenu, anyVigilFelled, dragonWorldGroup, dragonArenaGroup, dragonK };
-window.__scene = { scene, camera, renderer, moon, composer, playerShadow, bossShadow, witchK, witchShadow, witchWorldGroup, witchArenaGroup, dragonK, dragonShadow, dragonWorldGroup, dragonArenaGroup, THREE };
+window.__game = { G, P, B, W, V, F, TUNE, WEAPONS, SPOILS, BOSS_SHARDS, ALL_SPOILS, RARITY, DROP_POOL, ARENAS, BOSSES, BOSS_ORDER, bossUnlocked, bossShardFor, bossDropsFor, chooseBoss, enterBossArena, beginWitch, resetWitch, beginDragon, resetDragon, beginFang, resetFang, enterArena, touchStone, updateAwakening, touchWitchStone, touchDragonStone, updateWitchAwakening, updateDragon, poseDragon, dragonStrike, dragonDecide, spawnDragonBreath, spawnDragonStorm, updateFang, poseFang, fangStrike, fangDecide, touchFangStone, damageFang, fangEchoes, stonePos, witchStonePos, dragonStonePos, fangStonePos, restAtBonfire, damageBoss, damageWitch, damageDragon, damageFang, damagePlayer, equipWeapon, toggleInventory, equipSpoils, unequipSpoils, rollDrops, claimDrops, showDropScreen, spawnPillarBarrage, spawnInfernoBarrage, spawnMeteorStorm, spawnFireBoltVolley, clearBossHazards, clearHexHazards, pillars, fireBolts, fireWaves, hexPillars, hexBolts, hexWaves, skeletons, moonBeams, lunarAvatar, summonSkeletons, spawnMoonBeamVolley, damageSkeleton, damageSkeletonsInArc, saveGame, loadGame, eraseSave, applyWorldStyle, switchBossFromVictory, switchBossFromVigil, toggleVigilMenu, closeVigilMenu, anyVigilFelled, dragonWorldGroup, dragonArenaGroup, dragonK, fangWorldGroup, fangArenaGroup, fangK, fangShadow, spawnHexPillar, spawnFireWave };
+window.__scene = { scene, camera, renderer, moon, composer, playerShadow, bossShadow, witchK, witchShadow, witchWorldGroup, witchArenaGroup, dragonK, dragonShadow, dragonWorldGroup, dragonArenaGroup, fangK, fangShadow, fangWorldGroup, fangArenaGroup, THREE };
 
 
-if (location.hash === '#bosstest' || location.hash === '#witchtest' || location.hash === '#dragontest') {
+if (location.hash === '#bosstest' || location.hash === '#witchtest' || location.hash === '#dragontest' || location.hash === '#fangtest') {
   if (location.hash === '#witchtest') G.defeated.duncan = true;
   if (location.hash === '#dragontest') { G.defeated.duncan = true; G.defeated.witch = true; }
+  if (location.hash === '#fangtest') { G.defeated.duncan = true; G.defeated.witch = true; G.defeated.dragon = true; }
   setTimeout(() => {
-    chooseBoss(location.hash === '#witchtest' ? 'witch' : location.hash === '#dragontest' ? 'dragon' : 'duncan');
+    chooseBoss(location.hash === '#witchtest' ? 'witch' : location.hash === '#dragontest' ? 'dragon' : location.hash === '#fangtest' ? 'fang' : 'duncan');
   }, 300);
   setTimeout(() => {
     const m = bossMusic;
