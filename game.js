@@ -4564,6 +4564,7 @@ function loadGame() {
     witch: !!(d.defeated && d.defeated.witch),
     dragon: !!(d.defeated && d.defeated.dragon),
     fang: !!(d.defeated && d.defeated.fang),
+    duo: !!(d.defeated && d.defeated.duo),
   };
   // rebuild stats from a clean base so restoring is idempotent
   P.mods = { dmg: 1, hp: 1, st: 1, spd: 1, flask: 1 };
@@ -4583,15 +4584,16 @@ function eraseSave() {
   P.mods = { dmg: 1, hp: 1, st: 1, spd: 1, flask: 1 };
   P.maxHP = TUNE.playerHP; P.stMax = TUNE.playerST;
   G.ng = 0; G.inArena = false; G.bossDead = false; G.bossActive = false; G.fightTime = 0;
-  G.defeated = { duncan: false, witch: false, dragon: false, fang: false };
+  G.defeated = { duncan: false, witch: false, dragon: false, fang: false, duo: false };
   G.bossId = 'duncan'; ARENA = ARENAS.duncan;
   witchArenaGroup.visible = false; witchWorldGroup.visible = false;
   dragonArenaGroup.visible = false; dragonWorldGroup.visible = false;
   fangArenaGroup.visible = false; fangWorldGroup.visible = false;
+  duoArenaGroup.visible = false; duoWorldGroup.visible = false;
   applyWorldStyle('duncan');
   applyWeaponMesh('longsword');
   closeInventory();
-  resetBoss(); resetWitch(); resetDragon(); resetFang(); resetPlayer(); updateFlasks(); updateWeaponLabel(); updateHUD();
+  resetBoss(); resetWitch(); resetDragon(); resetFang(); resetDuo(); resetPlayer(); updateFlasks(); updateWeaponLabel(); updateHUD();
   setBossName(G.bossId);
   const el = document.getElementById('save-note'); if (el) el.textContent = SAVE_NOTE;
   showCenter('SAVE ERASED', 'a new vigil begins');
@@ -4722,7 +4724,7 @@ function resetDuo() {
   duoSyncHP();
   clearBossHazards(); clearHexHazards();
   telegraphEl.classList.add('hidden');
-  if (G.bossId === 'duo') { bossPlate.classList.add('hidden'); G.bossActive = false; }
+  if (G.bossId === 'duo') { bossPlate.classList.add('hidden'); G.bossActive = false; G.locked = false; lockHint.classList.add('hidden'); }
 }
 function duoStartAttack(T) {
   const other = duoOther(T);
@@ -5088,7 +5090,7 @@ function resetPlayer() {
   P.state = 'idle'; P.t = 0; P.iframes = false; P.drinkHeal = 0;
 }
 const saveRestored = loadGame();
-resetBoss(); resetWitch(); resetDragon(); resetFang(); resetPlayer();
+resetBoss(); resetWitch(); resetDragon(); resetFang(); resetDuo(); resetPlayer();
 applyWorldStyle(G.bossId);
 
 // ============ INPUT ============
@@ -5183,6 +5185,10 @@ function tryInteract() {
     if (G.inArena && !G.bossActive && !G.bossDead && near(fangStonePos, P.pos, 3.8)) touchFangStone();
     return;
   }
+  if (G.bossId === 'duo') {
+    if (G.inArena && !G.bossActive && !G.bossDead && near(duoStonePos, P.pos, 3.8)) touchDuoStone();
+    return;
+  }
   if (near(bonfirePos, P.pos, 3.2) && !G.inArena) { restAtBonfire(); return; }
   if (!G.inArena && near(new THREE.Vector3(0, 0, ARENA_R - 3.4), P.pos, 3.0)) { enterArena(); return; }
   if (G.inArena && !G.bossActive && !G.bossDead && near(stonePos, P.pos, 3.4)) { touchStone(); return; }
@@ -5211,32 +5217,70 @@ function inArc(from, facingYaw, to, range, arc) {
   const want = Math.atan2(to.x - from.x, to.z - from.z);
   return Math.abs(angDiff(want, facingYaw)) < arc;
 }
-function lockTargetValid() {
-  const t = activeBoss();
-  return G.bossActive && t.state !== 'dead' && t.state !== 'dormant' && activeBossGroup().visible;
+function lockTargetInfo() {
+  if (G.mode !== 'play') return null;
+  let best = null, bestD = Infinity;
+  const consider = (pos, aimY, scale, group, kind) => {
+    if (!group || !group.visible) return;
+    const d = dist2D(P.pos, pos);
+    if (d < bestD) { bestD = d; best = { pos, aimY, scale, group, kind }; }
+  };
+  if (G.bossActive) {
+    if (G.bossId === 'duo') {
+      for (const t of duoTwins) {
+        if (duoAlive(t)) consider(t.pos, t.id === 0 ? 2.05 : 2.45, t.k.group.scale.x / t.base, t.k.group, 'duo');
+      }
+    } else {
+      const t = activeBoss();
+      if (t.state !== 'dead' && t.state !== 'dormant') consider(t.pos, activeBossAimY(), activeBossScale(), activeBossGroup(), G.bossId);
+    }
+  }
+  for (const s of skeletons) {
+    if (s.state === 'dying') continue;
+    consider(s.group.position, 1.2, 0.5, s.group, 'skeleton');
+  }
+  return best;
 }
+function lockTargetValid() { return !!lockTargetInfo(); }
 function setLock(on) {
   G.locked = !!on && lockTargetValid();
   lockHint.classList.toggle('hidden', !G.locked);
 }
 function toggleLock() {
-  if (G.mode !== 'play' || !G.bossActive) return;
+  if (G.mode !== 'play' || G.paused) return;
   if (G.locked) {
     setLock(false);
     showSub('LOCK-ON RELEASED');
-  } else {
+  } else if (lockTargetValid()) {
     setLock(true);
-    if (G.locked) showSub('LOCKED ON');
+    showSub('AUTO-LOCK ON');
+  } else {
+    showSub('NO ENEMY TO LOCK ONTO');
   }
 }
-function lockOnActive() { return G.locked && lockTargetValid(); }
+function lockOnActive() { return G.locked && !G.paused && lockTargetValid(); }
 function bossFacingYaw() {
-  const t = activeBoss();
-  const dx = t.pos.x - P.pos.x, dz = t.pos.z - P.pos.z;
+  const target = lockTargetInfo();
+  if (!target) return P.yaw;
+  const dx = target.pos.x - P.pos.x, dz = target.pos.z - P.pos.z;
   if (dx * dx + dz * dz < 1e-4) return P.yaw;
   return Math.atan2(dx, dz);
 }
 function resolveBossCollision() {
+  if (G.bossId === 'duo') {
+    for (const t of duoTwins) {
+      if (!t.k.group.visible || t.state === 'dead' || t.state === 'dormant') continue;
+      const dx = P.pos.x - t.pos.x, dz = P.pos.z - t.pos.z;
+      const d = Math.hypot(dx, dz);
+      const minD = 1.35 * (t.k.group.scale.x / t.base) + 0.42;
+      if (d >= minD || d < 1e-4) continue;
+      P.pos.x = t.pos.x + dx / d * minD;
+      P.pos.z = t.pos.z + dz / d * minD;
+      if (G.inArena) clampToActiveArena(P.pos, 0.8);
+      P.pos.y = 0;
+    }
+    return;
+  }
   const t = activeBoss(), grp = activeBossGroup();
   if (!grp.visible || t.state === 'dead' || t.state === 'inferno' || !G.bossActive) return;
   const dx = P.pos.x - t.pos.x, dz = P.pos.z - t.pos.z;
@@ -5346,6 +5390,7 @@ function dealDamageToActiveBoss(dmg, poiseDmg) {
   if (G.bossId === 'witch') damageWitch(dmg, poiseDmg);
   else if (G.bossId === 'dragon') damageDragon(dmg, poiseDmg);
   else if (G.bossId === 'fang') damageFang(dmg, poiseDmg);
+  else if (G.bossId === 'duo') damageDuo(dmg, poiseDmg);
   else damageBoss(dmg, poiseDmg);
 }
 
@@ -5520,6 +5565,12 @@ function playerDie() {
       P.pos.set(FANG_CENTER.x, 0, FANG_CENTER.z + 8); P.yaw = Math.PI;
       updateFlasks(); G.mode = 'play';
       showCenter('YOU WAKE IN THE MOONLESS COURT', 'touch the eclipse stone to call Korvath back');
+    } else if (G.bossId === 'duo') {
+      resetDuo(); G.inArena = true;
+      resetPlayer();
+      P.pos.set(DUO_CENTER.x, 0, DUO_CENTER.z + 8); P.yaw = Math.PI;
+      updateFlasks(); G.mode = 'play';
+      showCenter('YOU WAKE IN THE SEPULCHRE', 'touch the choir stone to wake the twins again');
     } else {
       G.inArena = false; fogGate.material.opacity = 0.55;
       resetBoss(); resetPlayer(); updateFlasks();
@@ -5589,17 +5640,20 @@ function showVictory() {
   const isWitch = G.bossId === 'witch';
   const isDragon = G.bossId === 'dragon';
   const isFang = G.bossId === 'fang';
+  const isDuo = G.bossId === 'duo';
   const mins = Math.floor(G.fightTime / 60), secs = Math.floor(G.fightTime % 60);
   victoryStats.innerHTML = `Time <b>${mins}:${String(secs).padStart(2, '0')}</b> · NG+<b>${G.ng}</b><br>Estus left <b>${P.flasks}</b> · HP <b>${Math.ceil(P.hp)}/${P.maxHP}</b>`;
-  $('victory-title').textContent = isFang ? 'THE ECLIPSE BREAKS' : isDragon ? 'THE CALDERA FALLS SILENT' : isWitch ? 'THE HOLLOW FALLS SILENT' : 'THE VIGIL ENDS';
-  $('victory-tip').textContent = isFang
+  $('victory-title').textContent = isDuo ? 'THE CHOIR FALLS SILENT' : isFang ? 'THE ECLIPSE BREAKS' : isDragon ? 'THE CALDERA FALLS SILENT' : isWitch ? 'THE HOLLOW FALLS SILENT' : 'THE VIGIL ENDS';
+  $('victory-tip').textContent = isDuo
+    ? 'New Game+ : the twins sing louder and rise faster. Can you break the requiem again?'
+    : isFang
     ? 'New Game+ : Korvath\'s shadow cuts deeper. Can you outrun the eclipse again?'
     : isDragon
     ? 'New Game+ : the dragon\'s fire burns 25% hotter. Can you cool the caldera again?'
     : isWitch
       ? 'New Game+ : her hexes bite 25% harder. How deep will you walk the veil?'
       : 'New Game+ : he hits 25% harder each victory. How high can you go?';
-  $('btn-again').textContent = isFang ? '↻  FACE THE ECLIPSE AGAIN  ↻' : isDragon ? '↻  FACE THE DRAGON AGAIN  ↻' : isWitch ? '↻  FACE HER AGAIN  ↻' : '↻  FACE HIM AGAIN  ↻';
+  $('btn-again').textContent = isDuo ? '↻  FACE THE CHOIR AGAIN  ↻' : isFang ? '↻  FACE THE ECLIPSE AGAIN  ↻' : isDragon ? '↻  FACE THE DRAGON AGAIN  ↻' : isWitch ? '↻  FACE HER AGAIN  ↻' : '↻  FACE HIM AGAIN  ↻';
   buildVictorySwitch();
   victoryScreen.classList.remove('hidden');
 }
@@ -5643,8 +5697,8 @@ function travelToWorld(id, source) {
   }
   stopBossMusic();
   chooseBoss(id);
-  showCenter(id === 'witch' ? 'THE NIGHTSHADE HOLLOW' : id === 'dragon' ? 'THE CALDERA' : id === 'fang' ? 'THE MOONLESS COURT' : 'THE ASHEN RING',
-    id === 'witch' ? 'a violet forest beyond the veil' : id === 'dragon' ? 'a burning hollow beneath the world' : id === 'fang' ? 'a court where the last light died' : 'the old meadow, far from the hollow');
+  showCenter(id === 'witch' ? 'THE NIGHTSHADE HOLLOW' : id === 'dragon' ? 'THE CALDERA' : id === 'fang' ? 'THE MOONLESS COURT' : id === 'duo' ? 'THE HOLLOW CHOIR' : 'THE ASHEN RING',
+    id === 'witch' ? 'a violet forest beyond the veil' : id === 'dragon' ? 'a burning hollow beneath the world' : id === 'fang' ? 'a court where the last light died' : id === 'duo' ? 'a sepulchre where two voices refuse to die' : 'the old meadow, far from the hollow');
 }
 function switchBossFromVictory(id) { travelToWorld(id, 'victory'); }
 function switchBossFromVigil(id) { travelToWorld(id, 'vigil'); }
@@ -5677,13 +5731,15 @@ function enterBossArena(id) {
   dragonWorldGroup.visible = id === 'dragon';
   fangArenaGroup.visible = id === 'fang';
   fangWorldGroup.visible = id === 'fang';
+  duoArenaGroup.visible = id === 'duo';
+  duoWorldGroup.visible = id === 'duo';
   applyWorldStyle(id);
   G.awakening = false; G.bossRevealed = false; G.bossRevealY = 0;
   G.witchAwakening = false; G.witchAwakeT = 0;
   G.bossActive = false; G.bossDead = false; G.fightTime = 0; G.paused = false;
   G.inArena = true; G.locked = false; lockHint.classList.add('hidden');
   clearBossHazards(); clearHexHazards();
-  resetBoss(); resetWitch(); resetDragon(); resetFang(); resetPlayer();
+  resetBoss(); resetWitch(); resetDragon(); resetFang(); resetDuo(); resetPlayer();
   P.yaw = Math.PI; G.camYaw = 0; G.camPitch = 0.22;
   bossPlate.classList.add('hidden');
   setBossName(id);
@@ -5695,6 +5751,9 @@ function enterBossArena(id) {
     fogGate.material.opacity = 0.1;
   } else if (id === 'fang') {
     P.pos.set(FANG_CENTER.x, 0, FANG_CENTER.z + 8); P.yaw = Math.PI;
+    fogGate.material.opacity = 0.1;
+  } else if (id === 'duo') {
+    P.pos.set(DUO_CENTER.x, 0, DUO_CENTER.z + 8); P.yaw = Math.PI;
     fogGate.material.opacity = 0.1;
   } else {
     P.pos.set(0, 0, 8); P.yaw = Math.PI;
@@ -5768,7 +5827,13 @@ $('btn-erase').onclick = () => eraseSave();
 addEventListener('beforeunload', () => saveGame(true));
 $('btn-again').onclick = () => {  victoryScreen.classList.add('hidden');
   stopBossMusic();
-  if (G.bossId === 'fang') {
+  if (G.bossId === 'duo') {
+    G.ng++; G.bossDead = false; G.fightTime = 0; G.mode = 'play';
+    resetDuo(); resetPlayer(); G.inArena = true;
+    P.pos.set(DUO_CENTER.x, 0, DUO_CENTER.z + 8); P.yaw = Math.PI;
+    updateFlasks(); saveGame();
+    showCenter('NEW VIGIL — NG+' + G.ng, 'the twins rise faster. Touch the choir stone to call them back.');
+  } else if (G.bossId === 'fang') {
     G.ng++; G.bossDead = false; G.fightTime = 0; G.mode = 'play';
     resetFang(); resetPlayer(); G.inArena = true;
     P.pos.set(FANG_CENTER.x, 0, FANG_CENTER.z + 8); P.yaw = Math.PI;
@@ -7391,6 +7456,43 @@ function touchFangStone() {
   sfx.pillar();
   beginFang();
 }
+function beginDuo() {
+  if (G.bossId !== 'duo' || G.mode !== 'play' || G.bossActive || G.bossDead) return;
+  ARENA = ARENAS.duo;
+  for (const T of duoTwins) {
+    T.maxHP = TUNE.duoHP + G.ng * 78;
+    T.hp = T.maxHP;
+    T.pos.copy(T.home);
+    T.yaw = Math.atan2(P.pos.x - T.pos.x, P.pos.z - T.pos.z);
+    T.state = 'intro'; T.t = 0; T.decideCd = 1.0 + T.id * 0.25;
+    T.attackKind = ''; T.hasHit = false; T.staggerAcc = 0; T.deadT = 0; T.lastAttack = '';
+    T.revived = 0; T.flashT = 0;
+    T.k.group.position.copy(T.pos); T.k.group.rotation.y = T.yaw;
+    T.k.group.scale.setScalar(T.base);
+    T.k.group.visible = true; T.shadow.visible = true;
+    if (T.k.parts.swordGlow) T.k.parts.swordGlow.material.opacity = 0;
+  }
+  D.pos.set(DUO_CENTER.x, 0, DUO_CENTER.z - 3); D.yaw = Math.PI;
+  D.state = 'active'; D.t = 0; D.target = 0; D.decideCd = 0; D.phase2 = false;
+  D.requiemBy = -1; D.requiemT = 0; D.reviveT = 0; D.tollCd = 2.5; D.animT = 0; D.deadT = 0; D.lastAttack = '';
+  duoSyncHP();
+  G.bossActive = true; G.bossDead = false; G.fightTime = 0;
+  bossPlate.classList.remove('hidden'); setBossName('duo'); startBossMusic(); setLock(true);
+  bossNameEl.textContent = duoName();
+  sfx.roar(); G.shake = Math.max(G.shake, 0.72);
+  spawnRing(duoTwins[0].pos, 0xe4c470, 13);
+  spawnRing(duoTwins[1].pos, 0xfff0c8, 16);
+  spawnSparks(new THREE.Vector3(DUO_CENTER.x, 2.0, DUO_CENTER.z - 2), 54, 0xf0d9a0, 9);
+  showCenter('VESPER & MORROW, THE HOLLOW CHOIR', 'one voice falls, the other sings it back');
+}
+function touchDuoStone() {
+  if (!G.inArena || G.bossActive || G.bossDead || P.state === 'dead') return;
+  P.state = 'idle'; P.t = 0;
+  spawnRing(new THREE.Vector3(duoStonePos.x, 0, duoStonePos.z), 0xe4c470, 7);
+  spawnSparks(new THREE.Vector3(duoStonePos.x, 1.7, duoStonePos.z), 28, 0xf0d9a0, 7);
+  sfx.pillar();
+  beginDuo();
+}
 function fangDecide() {
   hideFangMarkWarn();
   const d = dist2D(F.pos, P.pos);
@@ -7692,20 +7794,23 @@ function updateCamera(dt) {
     camTarget.lerp(_camWant, 1 - Math.exp(-2.8 * dt));
     camLook.lerp(_camLookTarget, 1 - Math.exp(-3.6 * dt));
   } else if (lockOnActive()) {
-    const tgt = activeBoss();
+    const tgt = lockTargetInfo();
+    if (!tgt) return;
     const dx = P.pos.x - tgt.pos.x, dz = P.pos.z - tgt.pos.z;
     const len = Math.hypot(dx, dz);
     let bx, bz;
     if (len < 0.001) { bx = -Math.sin(P.yaw); bz = -Math.cos(P.yaw); }
     else { bx = dx / len; bz = dz / len; }
     const d = dist2D(P.pos, tgt.pos);
-    const scaleF = activeBossScale();
+    const scaleF = tgt.scale;
     const dist = 2.7 + Math.min(2.2, d * 0.16);
-    const camH = G.bossId === 'dragon'
+    const camH = tgt.kind === 'dragon'
       ? 1.5 + Math.min(0.6, d * 0.055)
-      : 1.95 + Math.min(0.8, d * 0.075);
+      : tgt.kind === 'skeleton'
+        ? 1.55 + Math.min(0.35, d * 0.04)
+        : 1.95 + Math.min(0.8, d * 0.075);
     _camWant.set(P.pos.x + bx * dist, camH, P.pos.z + bz * dist);
-    // never let the camera slip inside the boss
+    // never let the camera slip inside the target
     const vx = _camWant.x - tgt.pos.x, vz = _camWant.z - tgt.pos.z;
     const vd = Math.hypot(vx, vz), minCam = 1.9 * scaleF;
     if (vd < minCam) {
@@ -7721,7 +7826,7 @@ function updateCamera(dt) {
     }
     _camWant.y = Math.max(1.2, _camWant.y);
     camTarget.lerp(_camWant, 1 - Math.exp(-7 * dt));
-    camLook.lerp(_camAim.set(tgt.pos.x, activeBossAimY(), tgt.pos.z), 1 - Math.exp(-10 * dt));
+    camLook.lerp(_camAim.set(tgt.pos.x, tgt.aimY, tgt.pos.z), 1 - Math.exp(-10 * dt));
   } else {
     const cx = Math.sin(G.camYaw) * Math.cos(G.camPitch), cz = Math.cos(G.camYaw) * Math.cos(G.camPitch);
     _camWant.set(P.pos.x + cx * G.camDist, 1.6 + Math.sin(G.camPitch) * G.camDist, P.pos.z + cz * G.camDist);
@@ -7774,6 +7879,9 @@ function updateHUD() {
     else interactPrompt.classList.add('hidden');
   } else if (G.mode === 'play' && !G.awakening && !G.witchAwakening && !G.witchLunarCutscene && G.bossId === 'fang') {
     if (G.inArena && !G.bossActive && !G.bossDead && near(fangStonePos, P.pos, 3.8)) { interactPrompt.classList.remove('hidden'); interactText.textContent = 'to touch the eclipse stone'; }
+    else interactPrompt.classList.add('hidden');
+  } else if (G.mode === 'play' && !G.awakening && !G.witchAwakening && !G.witchLunarCutscene && G.bossId === 'duo') {
+    if (G.inArena && !G.bossActive && !G.bossDead && near(duoStonePos, P.pos, 3.8)) { interactPrompt.classList.remove('hidden'); interactText.textContent = 'to touch the choir stone'; }
     else interactPrompt.classList.add('hidden');
   } else if (G.mode === 'play' && !G.awakening && !G.witchAwakening && !G.witchLunarCutscene && G.bossId === 'duncan') {
     if (!G.inArena && near(bonfirePos, P.pos, 3.2)) { interactPrompt.classList.remove('hidden'); interactText.textContent = 'to rest at the bonfire'; }
@@ -8054,6 +8162,27 @@ function loop() {
     fangStoneMat.emissiveIntensity = 2.3 + Math.sin(t * 4.6) * 0.8 + (F.phase2 ? 1.2 : 0);
     fangLight.intensity = 54 + Math.sin(t * 4.2) * 9 + (F.phase2 ? 10 : 0);
   }
+  if (duoWorldGroup.visible) {
+    for (const m of duoMotes) {
+      const u = m.userData;
+      u.a += dt * u.speed;
+      m.position.x = DUO_CENTER.x + Math.cos(u.a) * u.rr;
+      m.position.z = DUO_CENTER.z + Math.sin(u.a) * u.rr;
+      m.position.y = u.y + Math.sin(t * 0.7 + u.bob) * 0.65;
+      m.material.opacity = 0.30 + Math.sin(t * 2.2 + u.bob) * 0.16;
+    }
+    if (duoHalo) {
+      duoHalo.rotation.z = t * 0.035;
+      duoHalo.material.opacity = 0.58 + Math.sin(t * 1.1) * 0.12;
+    }
+  }
+  if (duoStone && duoArenaGroup.visible) {
+    duoStone.rotation.y = t * 0.6;
+    duoStone.position.y = 2.4 + Math.sin(t * 1.6) * 0.09;
+    duoStoneGlow.material.opacity = 0.36 + Math.sin(t * 3.0) * 0.14;
+    duoStoneMat.emissiveIntensity = 2.1 + Math.sin(t * 4.0) * 0.7 + (D.phase2 ? 0.9 : 0);
+    duoLight.intensity = 48 + Math.sin(t * 4.0) * 8 + (D.phase2 ? 12 : 0);
+  }
   if (!G.awakening && altarGem.visible) {
     altarGem.rotation.y = t * 1.1;
     altarGem.position.y = 1.52 + Math.sin(t * 1.8) * 0.04;
@@ -8069,7 +8198,7 @@ function loop() {
     witchLight.intensity = 38 + Math.sin(t * 4.2) * 7;
   }
   fogGate.material.opacity = (G.inArena ? 0.1 : 0.5) + Math.sin(t * 1.7) * 0.06;
-  warm.intensity = G.bossId === 'witch' || G.bossId === 'dragon' || G.bossId === 'fang' ? 0 : 24 + Math.sin(t * 9) * 4;
+  warm.intensity = G.bossId === 'witch' || G.bossId === 'dragon' || G.bossId === 'fang' || G.bossId === 'duo' ? 0 : 24 + Math.sin(t * 9) * 4;
   // embers
   if (G.bossId === 'witch') {
     if (Math.random() < 0.32) spawnSparks(new THREE.Vector3(WITCH_CENTER.x + (Math.random() - 0.5) * 24, 0.5, WITCH_CENTER.z + (Math.random() - 0.5) * 24), 1, Math.random() < 0.5 ? 0x9b5cff : 0xd9b7ff, 1.2);
@@ -8077,6 +8206,8 @@ function loop() {
     if (Math.random() < 0.5) spawnSparks(new THREE.Vector3(DRAGON_CENTER.x + (Math.random() - 0.5) * 30, 0.4, DRAGON_CENTER.z + (Math.random() - 0.5) * 30), 1, Math.random() < 0.5 ? 0xff6a2a : 0xffc861, 1.6);
   } else if (G.bossId === 'fang') {
     if (Math.random() < 0.4) spawnSparks(new THREE.Vector3(FANG_CENTER.x + (Math.random() - 0.5) * 30, 0.4, FANG_CENTER.z + (Math.random() - 0.5) * 30), 1, Math.random() < 0.5 ? 0xff2a5e : 0x8b5cff, 1.4);
+  } else if (G.bossId === 'duo') {
+    if (Math.random() < 0.38) spawnSparks(new THREE.Vector3(DUO_CENTER.x + (Math.random() - 0.5) * 28, 0.4, DUO_CENTER.z + (Math.random() - 0.5) * 28), 1, Math.random() < 0.5 ? 0xe4c470 : 0xfff0c8, 1.3);
   } else if (Math.random() < 0.25) spawnSparks(new THREE.Vector3((Math.random()-0.5)*20, 0.5, (Math.random()-0.5)*20 + 6), 1, Math.random() < 0.5 ? 0xff8c3a : 0x555566, 1.2);
   updateSparks(dt);
   for (let i = rings.length - 1; i >= 0; i--) {
@@ -8100,10 +8231,12 @@ function loop() {
     if (!interacting && G.bossId === 'witch') updateWitch(dt);
     if (!interacting && G.bossId === 'dragon' && V.state !== 'dormant') updateDragon(dt);
     if (!interacting && G.bossId === 'fang' && F.state !== 'dormant') updateFang(dt);
+    if (!interacting && G.bossId === 'duo' && D.state !== 'dormant') updateDuo(dt);
     if (!interacting && !G.witchLunarCutscene) { resolveStoneCollision(); resolveBossCollision(); }
     if (G.bossId === 'witch') { updateHexBolts(dt); updateHexPillars(dt); updateHexWaves(dt); updateMoonBeams(dt); updateSkeletons(dt); }
     else if (G.bossId === 'dragon') { updatePillars(dt); updateFireWaves(dt); }
     else if (G.bossId === 'fang') { updatePillars(dt); updateHexPillars(dt); updateFireWaves(dt); }
+    else if (G.bossId === 'duo') { updateHexWaves(dt); }
     else { updatePillars(dt); updateFireBolts(dt); updateFireWaves(dt); }
     if (G.bossId === 'duncan') { updateInfernoOrbVisual(dt); updateInfernoMark(dt); updateBossFireAura(dt); }
   }
@@ -8116,6 +8249,7 @@ function loop() {
   if (witchK.group.visible) poseWitch(dt);
   if (dragonK.group.visible) { poseDragon(dt); updateDragonBreathFX(dt); }
   if (fangK.group.visible) poseFang(dt);
+  if (duoAK.group.visible || duoBK.group.visible) poseDuo(dt);
   const clothNormals = (frameNo % 3) === 0;
   animateCloth(playerK.parts.cape, t, clothNormals); animateCloth(playerK.parts.cape2, t * 1.07, clothNormals);
   if (bossVisible) {
@@ -8128,6 +8262,11 @@ function loop() {
   if (fangK.group.visible) {
     animateCloth(fangK.parts.cape, t * 1.02, clothNormals);
     animateCloth(fangK.parts.cape2, t * 1.09, clothNormals);
+  }
+  for (const T of duoTwins) {
+    if (!T.k.group.visible) continue;
+    animateCloth(T.k.parts.cape, t * (0.96 + T.id * 0.07), clothNormals);
+    animateCloth(T.k.parts.cape2, t * (1.03 + T.id * 0.07), clothNormals);
   }
   playerShadow.position.set(P.pos.x, 0.025, P.pos.z);
   bossShadow.position.set(B.pos.x, 0.025, B.pos.z);
@@ -8149,20 +8288,22 @@ updateWeaponLabel();
 loop();
 
 // expose for automated checks
-window.__game = { G, P, B, W, V, F, TUNE, WEAPONS, SPOILS, BOSS_SHARDS, ALL_SPOILS, RARITY, DROP_POOL, DROP_WEIGHTS, SWORD_DROPS, SPOIL_DROPS, FANG_ATK, WEAPON_ORDER, ARENAS, BOSSES, BOSS_ORDER, bossUnlocked, bossShardFor, bossDropsFor, chooseBoss, enterBossArena, beginWitch, resetWitch, beginDragon, resetDragon, beginFang, resetFang, enterArena, touchStone, updateAwakening, touchWitchStone, touchDragonStone, updateWitchAwakening, updateDragon, poseDragon, dragonStrike, dragonDecide, spawnDragonBreath, spawnDragonStorm, updateFang, poseFang, fangStrike, fangDecide, touchFangStone, damageFang, fangEchoes, fangSlashes, spawnFangSkySlash, updateFangSlashes, clearFangSlashes, setCreatorMode, bossMusicInfo: () => bossMusic ? { step: bossMusic.step, tempo: bossMusic.tempo, phase2: bossMusic.phase2, state: bossMusic.ac.state, gain: bossMusic.master.gain.value } : null, stonePos, witchStonePos, dragonStonePos, fangStonePos, restAtBonfire, damageBoss, damageWitch, damageDragon, damageFang, damagePlayer, equipWeapon, toggleInventory, equipSpoils, unequipSpoils, rollDrops, claimDrops, showDropScreen, spawnPillarBarrage, spawnInfernoBarrage, spawnMeteorStorm, spawnFireBoltVolley, clearBossHazards, clearHexHazards, pillars, fireBolts, fireWaves, hexPillars, hexBolts, hexWaves, skeletons, moonBeams, lunarAvatar, summonSkeletons, spawnMoonBeamVolley, damageSkeleton, damageSkeletonsInArc, saveGame, loadGame, eraseSave, applyWorldStyle, switchBossFromVictory, switchBossFromVigil, toggleVigilMenu, closeVigilMenu, anyVigilFelled, dragonWorldGroup, dragonArenaGroup, dragonK, fangWorldGroup, fangArenaGroup, fangK, fangShadow, spawnHexPillar, spawnFireWave };
-window.__scene = { scene, camera, renderer, moon, composer, playerShadow, bossShadow, witchK, witchShadow, witchWorldGroup, witchArenaGroup, dragonK, dragonShadow, dragonWorldGroup, dragonArenaGroup, fangK, fangShadow, fangWorldGroup, fangArenaGroup, THREE };
+window.__game = { G, P, B, W, V, F, D, TUNE, WEAPONS, SPOILS, BOSS_SHARDS, ALL_SPOILS, RARITY, DROP_POOL, DROP_WEIGHTS, SWORD_DROPS, SPOIL_DROPS, FANG_ATK, WEAPON_ORDER, ARENAS, BOSSES, BOSS_ORDER, bossUnlocked, bossShardFor, bossDropsFor, chooseBoss, enterBossArena, beginWitch, resetWitch, beginDragon, resetDragon, beginFang, resetFang, beginDuo, resetDuo, enterArena, touchStone, updateAwakening, touchWitchStone, touchDragonStone, updateWitchAwakening, updateDragon, poseDragon, dragonStrike, dragonDecide, spawnDragonBreath, spawnDragonStorm, updateFang, poseFang, fangStrike, fangDecide, touchFangStone, damageFang, fangEchoes, fangSlashes, spawnFangSkySlash, updateFangSlashes, clearFangSlashes, updateDuo, poseDuo, touchDuoStone, damageDuo, duoTwins, duoAlive, duoSelectTarget, lockTargetInfo, toggleLock, setCreatorMode, bossMusicInfo: () => bossMusic ? { step: bossMusic.step, tempo: bossMusic.tempo, phase2: bossMusic.phase2, state: bossMusic.ac.state, gain: bossMusic.master.gain.value } : null, stonePos, witchStonePos, dragonStonePos, fangStonePos, duoStonePos, restAtBonfire, damageBoss, damageWitch, damageDragon, damageFang, damagePlayer, equipWeapon, toggleInventory, equipSpoils, unequipSpoils, rollDrops, claimDrops, showDropScreen, spawnPillarBarrage, spawnInfernoBarrage, spawnMeteorStorm, spawnFireBoltVolley, clearBossHazards, clearHexHazards, pillars, fireBolts, fireWaves, hexPillars, hexBolts, hexWaves, skeletons, moonBeams, lunarAvatar, summonSkeletons, spawnMoonBeamVolley, damageSkeleton, damageSkeletonsInArc, saveGame, loadGame, eraseSave, applyWorldStyle, switchBossFromVictory, switchBossFromVigil, toggleVigilMenu, closeVigilMenu, anyVigilFelled, dragonWorldGroup, dragonArenaGroup, dragonK, fangWorldGroup, fangArenaGroup, fangK, fangShadow, duoWorldGroup, duoArenaGroup, duoAK, duoBK, duoAShadow, duoBShadow, spawnHexPillar, spawnFireWave };
+window.__scene = { scene, camera, renderer, moon, composer, playerShadow, bossShadow, witchK, witchShadow, witchWorldGroup, witchArenaGroup, dragonK, dragonShadow, dragonWorldGroup, dragonArenaGroup, fangK, fangShadow, fangWorldGroup, fangArenaGroup, duoAK, duoBK, duoAShadow, duoBShadow, duoWorldGroup, duoArenaGroup, duoStone, THREE };
 
 
-if (location.hash === '#bosstest' || location.hash === '#witchtest' || location.hash === '#dragontest' || location.hash === '#fangtest') {
+if (location.hash === '#bosstest' || location.hash === '#witchtest' || location.hash === '#dragontest' || location.hash === '#fangtest' || location.hash === '#duotest') {
   if (location.hash === '#witchtest') G.defeated.duncan = true;
   if (location.hash === '#dragontest') { G.defeated.duncan = true; G.defeated.witch = true; }
   if (location.hash === '#fangtest') { G.defeated.duncan = true; G.defeated.witch = true; G.defeated.dragon = true; }
+  if (location.hash === '#duotest') { G.defeated.duncan = true; G.defeated.witch = true; G.defeated.dragon = true; G.defeated.fang = true; }
   setTimeout(() => {
-    const id = location.hash === '#witchtest' ? 'witch' : location.hash === '#dragontest' ? 'dragon' : location.hash === '#fangtest' ? 'fang' : 'duncan';
+    const id = location.hash === '#witchtest' ? 'witch' : location.hash === '#dragontest' ? 'dragon' : location.hash === '#fangtest' ? 'fang' : location.hash === '#duotest' ? 'duo' : 'duncan';
     chooseBoss(id);
     if (id === 'witch') { touchWitchStone(); G.witchAwakeT = 1.16; updateWitchAwakening(0.01); }
     else if (id === 'dragon') touchDragonStone();
     else if (id === 'fang') touchFangStone();
+    else if (id === 'duo') touchDuoStone();
     else { touchStone(); G.awakeT = 3.05; updateAwakening(0.01); }
   }, 300);
   setTimeout(() => {

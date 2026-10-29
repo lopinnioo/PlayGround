@@ -31,14 +31,14 @@
     <div id="boss-name">SER DUNCAN &nbsp;·&nbsp; THE ASHEN KNIGHT</div>
     <div id="boss-wrap"><div id="boss-fill"></div><div id="boss-ghost"></div></div>
   </div>
-  <div id="lock-hint" class="hidden">— LOCKED ON —</div>
+  <div id="lock-hint" class="hidden">— Q · LOCKED ON —</div>
   <div id="interact-prompt" class="hidden">Press <b>E</b> <span id="interact-text"></span></div>
   <div id="boss-telegraph" class="hidden">⚠</div>
 </div>
 
 <div id="controls-hint">
   <b>WASD</b> move · <b>Mouse</b> camera · <b>LMB</b> attack · <b>RMB/F</b> heavy · <b>Space</b> dodge-roll ·
-  <b>E</b> interact · <b>R</b> estus · <b>T</b> travel · <b>AUTO</b> boss lock-on · <b>Shift</b> sprint · <b>M</b> mute
+  <b>E</b> interact · <b>R</b> estus · <b>T</b> travel · <b>Q</b> auto-lock nearest enemy · <b>Shift</b> sprint · <b>M</b> mute
 </div>
 
 <div id="vignette"></div>
@@ -53,12 +53,12 @@
     <div id="boss-select" class="boss-select"></div>
     <div class="controls-grid">
       <div><b>WASD</b><span>move</span></div>
-      <div><b>MOUSE</b><span>camera (click to lock)</span></div>
+      <div><b>MOUSE</b><span>camera</span></div>
       <div><b>LMB</b><span>light attack ×3 combo</span></div>
       <div><b>RMB / F</b><span>heavy attack</span></div>
       <div><b>SPACE</b><span>dodge-roll (i-frames)</span></div>
       <div><b>R</b><span>drink estus (2 flasks)</span></div>
-      <div><b>AUTO</b><span>lock-on always tracks the boss</span></div>
+      <div><b>Q</b><span>auto-lock nearest enemy / release</span></div>
       <div><b>E</b><span>rest / enter arena</span></div>
       <div><b>T</b><span>travel between worlds</span></div>
     </div>
@@ -96,7 +96,7 @@
   <div class="vigil-panel">
     <div class="subtitle gold">THE CROSSROADS</div>
     <h2>CHOOSE YOUR VIGIL</h2>
-    <p id="vigil-note">Three worlds answer your call. The fog remembers every victory.</p>
+    <p id="vigil-note">Five worlds answer your call. The fog remembers every victory.</p>
     <div id="vigil-boss-list" class="victory-boss-list vigil-boss-list"></div>
     <div class="vigil-foot">T / ESC to close · travelling away from an active duel abandons it</div>
   </div>
@@ -106,7 +106,7 @@
 <div id="drop-screen" class="hidden">
   <div class="drop-panel">
     <div class="subtitle gold">SPOILS OF WAR</div>
-    <h2 id="drop-title">SER DUNCAN HAS FALLEN</h2>
+    <h2 id="drop-title">THE VIGIL HAS FALLEN</h2>
     <div id="drop-list"></div>
     <button id="btn-claim">CLAIM SPOILS&nbsp; (E)</button>
   </div>
