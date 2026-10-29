@@ -34,7 +34,7 @@ const TUNE = {
   witchHP: 1320, witchDmg: { bolt: 34, wave: 42, curse: 52, blink: 46, storm: 30, beam: 50, skeleton: 18, moonzone: 46 }, witchSpeed: 3.2,
   dragonHP: 4048, dragonDmg: { bite: 61, tail: 71, breath: 50, dive: 73, wing: 42, backdraft: 55 }, dragonSpeed: 3.0,
   fangHP: 2550, fangDmg: { rend: 40, skyrend: 28, skyrendBig: 56, spin: 50, plunge: 66, duskwave: 38, duskfire: 42, afterimage: 44 }, fangSpeed: 4.0,
-  duoHP: 1580, duoDmg: { thrust: 48, sweep: 42, slam: 62, charge: 58, toll: 48, echo: 26 }, duoSpeed: 3.6,
+  duoHP: 1580, duoDmg: { frostbolt: 30, frostfall: 46, frostwave: 42, cleave: 46, slam: 64, charge: 58 }, duoSpeed: 3.6,
 };
 
 // ============ AUDIO (procedural, no files) ============
@@ -480,7 +480,7 @@ let envDuncan = null, envWitch = null, envDragon = null, envFang = null, envDuo 
   envWitch = makeEnv([[0, '#120a30'], [0.38, '#2a1e66'], [0.52, '#4a2a7a'], [0.58, '#3a1028'], [1, '#08040f']], 'rgba(190,40,90,0.5)');
   envDragon = makeEnv([[0, '#160806'], [0.38, '#3c140c'], [0.52, '#7a2a12'], [0.58, '#2a0b06'], [1, '#090302']], 'rgba(255,92,28,0.65)');
   envFang = makeEnv([[0, '#07040d'], [0.38, '#1b1030'], [0.52, '#5c102c'], [0.58, '#1a0510'], [1, '#050207']], 'rgba(255,32,90,0.6)');
-  envDuo = makeEnv([[0, '#0b0a08'], [0.38, '#262018'], [0.52, '#6b5834'], [0.58, '#2a1d12'], [1, '#080604']], 'rgba(228,196,112,0.55)');
+  envDuo = makeEnv([[0, '#040b10'], [0.38, '#17313d'], [0.52, '#7fb2c5'], [0.58, '#16313b'], [1, '#03080b']], 'rgba(158,230,255,0.52)');
   scene.environment = envDuncan;
   pmrem.dispose();
 }
@@ -528,14 +528,14 @@ const WORLD_STYLES = {
     arena: { color: 0xff2a5e, intensity: 0 },
   },
   duo: {
-    bg: 0x0b0906, fog: 0x1d1810, fogDensity: 0.034, env: () => envDuo,
-    sky: { zenith: 0x030202, mid: 0x16110b, horizon: 0x5c4824, glow: 0xe4c470 },
-    hemi: { sky: 0xd8c48a, ground: 0x120d08, intensity: 0.58 },
-    moon: { color: 0xf0d9a0, intensity: 0.95 },
-    fill: { color: 0xc9a85c, intensity: 0.52 },
-    rim: { color: 0xffd27a, intensity: 1.7 },
-    backlight: { color: 0x8c6a32, intensity: 1.15 },
-    arena: { color: 0xe4c470, intensity: 0 },
+    bg: 0x071017, fog: 0x162832, fogDensity: 0.036, env: () => envDuo,
+    sky: { zenith: 0x02060a, mid: 0x0a2028, horizon: 0x3f6a7a, glow: 0x9ee6ff },
+    hemi: { sky: 0xa8d8e8, ground: 0x0a1418, intensity: 0.66 },
+    moon: { color: 0xcfefff, intensity: 1.1 },
+    fill: { color: 0x8fc6d8, intensity: 0.5 },
+    rim: { color: 0x9fe6ff, intensity: 1.6 },
+    backlight: { color: 0x5f9fb8, intensity: 1.2 },
+    arena: { color: 0x9ee6ff, intensity: 0 },
   },
 };
 const duncanLights = [];
@@ -1896,24 +1896,25 @@ fangWorldGroup.visible = false;
 // ============ THE HOLLOW CHOIR (Vesper & Morrow arena + sepulchre world) ============
 const duoStonePos = new THREE.Vector3(DUO_CENTER.x, 0, DUO_CENTER.z - 11.5);
 let duoStone, duoStoneMat, duoStoneGlow, duoLight;
+const duoArenaSnow = [];
 const duoArenaGroup = new THREE.Group();
 duoArenaGroup.name = 'duo-arena';
 scene.add(duoArenaGroup);
 {
   const C = DUO_CENTER;
   const floorMat = new THREE.MeshStandardMaterial({
-    map: dirtTex, color: 0x5a4a32, roughness: 1, transparent: true, opacity: 0.95,
+    map: dirtTex, color: 0x4d6570, roughness: 1, transparent: true, opacity: 0.95,
     alphaMap: arenaFadeTex, depthWrite: false,
     normalMap: groundNormalTex, normalScale: new THREE.Vector2(0.85, 0.85),
   });
   const floor = new THREE.Mesh(new THREE.CircleGeometry(DUO_R + 1.6, 72), floorMat);
   floor.rotation.x = -Math.PI / 2; floor.position.set(C.x, 0.006, C.z); floor.receiveShadow = true; duoArenaGroup.add(floor);
-  for (const [rr, w, op, col] of [[2.9, 0.07, 0.40, 0xe4c470], [7.4, 0.045, 0.24, 0xd8b45e], [12.2, 0.055, 0.18, 0xf0d9a0], [DUO_R - 1.2, 0.10, 0.32, 0xb99348]]) {
+  for (const [rr, w, op, col] of [[2.9, 0.07, 0.40, 0xbfe7ff], [7.4, 0.045, 0.24, 0x8fd4f0], [12.2, 0.055, 0.18, 0xe8f7ff], [DUO_R - 1.2, 0.10, 0.32, 0x6fa6c0]]) {
     const ring = new THREE.Mesh(new THREE.RingGeometry(rr, rr + w, 96),
       new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: op, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
     ring.rotation.x = -Math.PI / 2; ring.position.set(C.x, 0.02 + rr * 0.0002, C.z); duoArenaGroup.add(ring);
   }
-  const columnMat = new THREE.MeshStandardMaterial({ color: 0x2d2418, roughness: 0.9, metalness: 0.14, flatShading: true });
+  const columnMat = new THREE.MeshStandardMaterial({ color: 0x4a6a78, roughness: 0.58, metalness: 0.12, flatShading: true });
   for (let i = 0; i < 16; i++) {
     const a = i / 16 * Math.PI * 2 + 0.1;
     const rr = DUO_R - 0.4 + Math.random() * 0.8;
@@ -1927,21 +1928,30 @@ scene.add(duoArenaGroup);
   }
   const DS = duoStonePos;
   const dais = new THREE.Mesh(new THREE.CylinderGeometry(1.10, 1.42, 0.34, 8),
-    new THREE.MeshStandardMaterial({ color: 0x3a3020, roughness: 0.8, metalness: 0.34, flatShading: true }));
+    new THREE.MeshStandardMaterial({ color: 0x2e4650, roughness: 0.8, metalness: 0.34, flatShading: true }));
   dais.position.set(DS.x, 0.19, DS.z); dais.castShadow = dais.receiveShadow = true; duoArenaGroup.add(dais);
-  duoStoneMat = new THREE.MeshStandardMaterial({ color: 0x1a1409, emissive: 0xe4c470, emissiveIntensity: 1.7, metalness: 0.72, roughness: 0.2 });
+  duoStoneMat = new THREE.MeshStandardMaterial({ color: 0x0d1a22, emissive: 0x9ee6ff, emissiveIntensity: 1.7, metalness: 0.72, roughness: 0.2 });
   duoStone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.82, 0), duoStoneMat);
   duoStone.scale.set(0.78, 1.9, 0.78); duoStone.position.set(DS.x, 2.4, DS.z); duoStone.castShadow = true; duoArenaGroup.add(duoStone);
   const halo = new THREE.Mesh(new THREE.TorusGeometry(1.22, 0.04, 8, 48),
-    new THREE.MeshBasicMaterial({ color: 0xf0d9a0, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
+    new THREE.MeshBasicMaterial({ color: 0xcfefff, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
   halo.position.set(DS.x, 2.4, DS.z); halo.rotation.x = 1.18; duoArenaGroup.add(halo);
-  duoStoneGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: fireGlowTex, color: 0xe4c470, transparent: true, opacity: 0.44, blending: THREE.AdditiveBlending, depthWrite: false }));
+  duoStoneGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: fireGlowTex, color: 0xbfeaff, transparent: true, opacity: 0.44, blending: THREE.AdditiveBlending, depthWrite: false }));
   duoStoneGlow.scale.setScalar(5.0); duoStoneGlow.position.set(DS.x, 2.4, DS.z); duoArenaGroup.add(duoStoneGlow);
-  duoLight = new THREE.PointLight(0xe4c470, 60, 56, 1.7); duoLight.position.set(C.x, 8, C.z);
+  duoLight = new THREE.PointLight(0xbfeaff, 60, 56, 1.7); duoLight.position.set(C.x, 8, C.z);
   duoArenaGroup.add(duoLight); duoLights.push(duoLight);
   const veil = new THREE.Mesh(new THREE.PlaneGeometry(6.8, 4.0),
-    new THREE.MeshBasicMaterial({ color: 0x120e08, transparent: true, opacity: 0.58, side: THREE.DoubleSide, depthWrite: false }));
+    new THREE.MeshBasicMaterial({ color: 0x08141c, transparent: true, opacity: 0.58, side: THREE.DoubleSide, depthWrite: false }));
   veil.position.set(C.x, 2.25, C.z + DUO_R - 3.2); duoArenaGroup.add(veil);
+  const snowMat = new THREE.SpriteMaterial({ map: fireGlowTex, color: 0xe8f7ff, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, fog: true });
+  for (let i = 0; i < 42; i++) {
+    const sp = new THREE.Sprite(snowMat);
+    const a = Math.random() * Math.PI * 2, rr = Math.random() * DUO_R * 0.92;
+    sp.position.set(C.x + Math.cos(a) * rr, 0.6 + Math.random() * 13, C.z + Math.sin(a) * rr);
+    sp.scale.setScalar(0.08 + Math.random() * 0.16);
+    sp.userData = { vy: 0.32 + Math.random() * 0.6, sway: Math.random() * 6.28, drift: 0.5 + Math.random() * 0.8 };
+    duoArenaSnow.push(sp); duoArenaGroup.add(sp);
+  }
 }
 duoArenaGroup.visible = false;
 
@@ -1953,16 +1963,16 @@ let duoHalo = null;
 {
   const C = DUO_CENTER;
   const floorTex = canvasTex(512, (x, s) => {
-    x.fillStyle = '#1b160e'; x.fillRect(0, 0, s, s);
+    x.fillStyle = '#101a1e'; x.fillRect(0, 0, s, s);
     for (let i = 0; i < 130; i++) {
       const g = x.createRadialGradient(Math.random() * s, Math.random() * s, 2, Math.random() * s, Math.random() * s, 18 + Math.random() * 80);
-      const pal = ['rgba(80,66,40,0.22)', 'rgba(44,34,20,0.28)', 'rgba(12,9,6,0.34)', 'rgba(110,88,48,0.09)'];
+      const pal = ['rgba(104,148,164,0.22)', 'rgba(42,72,86,0.28)', 'rgba(8,18,24,0.34)', 'rgba(150,205,220,0.09)'];
       g.addColorStop(0, pal[Math.random() * pal.length | 0]); g.addColorStop(1, 'rgba(0,0,0,0)');
       x.fillStyle = g; x.fillRect(0, 0, s, s);
     }
     for (let i = 0; i < 14000; i++) {
       const v = 18 + Math.random() * 34 | 0;
-      x.fillStyle = `rgba(${v + 12},${v + 6},${v},${0.2 + Math.random() * 0.3})`;
+      x.fillStyle = `rgba(${v + 6},${v + 14},${v + 22},${0.2 + Math.random() * 0.3})`;
       x.fillRect(Math.random() * s, Math.random() * s, 1 + Math.random() * 3, 1 + Math.random() * 2);
     }
   }, 24);
@@ -1971,7 +1981,7 @@ let duoHalo = null;
     normalMap: groundNormalTex, normalScale: new THREE.Vector2(0.8, 0.8),
   }));
   floor.name = 'hollow-choir-floor'; floor.rotation.x = -Math.PI / 2; floor.position.set(C.x, 0.004, C.z); floor.receiveShadow = true; duoWorldGroup.add(floor);
-  const ruMat = new THREE.MeshStandardMaterial({ color: 0x241d12, roughness: 0.94, metalness: 0.06, flatShading: true });
+  const ruMat = new THREE.MeshStandardMaterial({ color: 0x2b3f48, roughness: 0.94, metalness: 0.06, flatShading: true });
   const dummy = new THREE.Object3D();
   const count = 54;
   const ruins = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), ruMat, count);
@@ -1985,14 +1995,14 @@ let duoHalo = null;
     dummy.updateMatrix(); ruins.setMatrixAt(i, dummy.matrix);
   }
   ruins.instanceMatrix.needsUpdate = true; ruins.castShadow = true; duoWorldGroup.add(ruins);
-  const disc = new THREE.Mesh(new THREE.CircleGeometry(14, 64), new THREE.MeshBasicMaterial({ color: 0x070604, fog: false }));
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(14, 64), new THREE.MeshBasicMaterial({ color: 0x050a0d, fog: false }));
   disc.position.set(C.x, 34, C.z - 84); duoWorldGroup.add(disc);
   duoHalo = new THREE.Mesh(new THREE.TorusGeometry(14.5, 0.24, 8, 96),
-    new THREE.MeshBasicMaterial({ color: 0xe4c470, transparent: true, opacity: 0.65, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+    new THREE.MeshBasicMaterial({ color: 0x9ee6ff, transparent: true, opacity: 0.65, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
   duoHalo.position.set(C.x, 34, C.z - 83.8); duoWorldGroup.add(duoHalo);
-  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: fireGlowTex, color: 0xe4c470, transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: fireGlowTex, color: 0xbfeaff, transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
   glow.scale.setScalar(50); glow.position.set(C.x, 34, C.z - 84); duoWorldGroup.add(glow);
-  const moteMats = [0xe4c470, 0xf0d9a0, 0x9b7a3e].map(c => new THREE.SpriteMaterial({
+  const moteMats = [0xbfeaff, 0xe8f7ff, 0x7fb6d0].map(c => new THREE.SpriteMaterial({
     map: fireGlowTex, color: c, transparent: true, opacity: 0.46, blending: THREE.AdditiveBlending, depthWrite: false, fog: true,
   }));
   for (let i = 0; i < 28; i++) {
@@ -2003,7 +2013,7 @@ let duoHalo = null;
     sp.userData = { a, rr, y: sp.position.y, speed: 0.04 + Math.random() * 0.11, bob: Math.random() * 6.28 };
     duoMotes.push(sp); duoWorldGroup.add(sp);
   }
-  const li = new THREE.PointLight(0xe4c470, 56, 58, 1.7); li.position.set(C.x, 8, C.z);
+  const li = new THREE.PointLight(0xbfeaff, 56, 58, 1.7); li.position.set(C.x, 8, C.z);
   duoWorldGroup.add(li); duoLights.push(li);
 }
 duoWorldGroup.visible = false;
@@ -2256,7 +2266,7 @@ const SPOILS = [
   { id: 'soles', name: 'Swift Soles', icon: 'boot', rarity: 'rare', desc: '+13% move speed', apply: P => { P.mods.spd *= 1.13; }, unapply: P => { P.mods.spd /= 1.13; } },
   { id: 'bloodgem', name: 'Bloodstone', icon: 'gem', rarity: 'rare', desc: '+16% max HP, +9% damage', apply: P => { P.mods.hp *= 1.16; P.maxHP = Math.round(TUNE.playerHP * P.mods.hp); P.hp = Math.min(P.hp, P.maxHP); P.mods.dmg *= 1.09; }, unapply: P => { P.mods.hp /= 1.16; P.maxHP = Math.round(TUNE.playerHP * P.mods.hp); P.hp = Math.min(P.hp, P.maxHP); P.mods.dmg /= 1.09; } },
   { id: 'crown', name: "Ashen Lord's Crown", icon: 'crown', rarity: 'legendary', desc: '+28% damage, +28% max HP', apply: P => { P.mods.dmg *= 1.28; P.mods.hp *= 1.28; P.maxHP = Math.round(TUNE.playerHP * P.mods.hp); P.hp = Math.min(P.hp, P.maxHP); }, unapply: P => { P.mods.dmg /= 1.28; P.mods.hp /= 1.28; P.maxHP = Math.round(TUNE.playerHP * P.mods.hp); P.hp = Math.min(P.hp, P.maxHP); } },
-  { id: 'dragonheart', name: 'Dragonheart', icon: 'heart', rarity: 'legendary', desc: '+45% max HP, +30% stamina', apply: P => { P.mods.hp *= 1.45; P.maxHP = Math.round(TUNE.playerHP * P.mods.hp); P.hp = Math.min(P.hp, P.maxHP); P.mods.st *= 1.30; P.stMax = Math.round(TUNE.playerST * P.mods.st); P.st = Math.min(P.st, P.stMax); }, unapply: P => { P.mods.hp /= 1.45; P.maxHP = Math.round(TUNE.playerHP * P.mods.hp); P.hp = Math.min(P.hp, P.maxHP); P.mods.st /= 1.30; P.stMax = Math.round(TUNE.playerST * P.mods.st); P.st = Math.min(P.st, P.stMax); } },
+  { id: 'dragonheart', name: 'Dragonheart', icon: 'heart', rarity: 'legendary', desc: '+35% max HP, +25% stamina', apply: P => { P.mods.hp *= 1.35; P.maxHP = Math.round(TUNE.playerHP * P.mods.hp); P.hp = Math.min(P.hp, P.maxHP); P.mods.st *= 1.25; P.stMax = Math.round(TUNE.playerST * P.mods.st); P.st = Math.min(P.st, P.stMax); }, unapply: P => { P.mods.hp /= 1.35; P.maxHP = Math.round(TUNE.playerHP * P.mods.hp); P.hp = Math.min(P.hp, P.maxHP); P.mods.st /= 1.25; P.stMax = Math.round(TUNE.playerST * P.mods.st); P.st = Math.min(P.st, P.stMax); } },
   { id: 'vigilblade', name: 'Vigil Talisman', icon: 'sword', rarity: 'legendary', desc: '+40% damage', apply: P => { P.mods.dmg *= 1.40; }, unapply: P => { P.mods.dmg /= 1.40; } },
   { id: 'moongem', name: 'Moonlight Gem', icon: 'gem', rarity: 'legendary', desc: '+35% stamina, +16% move speed', apply: P => { P.mods.st *= 1.35; P.stMax = Math.round(TUNE.playerST * P.mods.st); P.st = Math.min(P.st, P.stMax); P.mods.spd *= 1.16; }, unapply: P => { P.mods.st /= 1.35; P.stMax = Math.round(TUNE.playerST * P.mods.st); P.st = Math.min(P.st, P.stMax); P.mods.spd /= 1.16; } },
 ];
@@ -3312,60 +3322,60 @@ const fangShadow = blobShadow(3.4, 0.44); fangShadow.visible = false;
 
 
 // The Hollow Choir — two bound celebrants, one gaunt cantor and one bell-ringer.
-const duoAK = buildKnight({ scale: DUO_A_BASE_SCALE, armor: 0xcabf9f, trim: 0xe4c470, cloth: 0x2a2116, plume: 0xe8d9a8, emissive: 0xffe6a0, weapon: 'longsword' });
+const duoAK = buildKnight({ scale: DUO_A_BASE_SCALE, armor: 0x9fb8c8, trim: 0x9fe6ff, cloth: 0x10252f, plume: 0xdff6ff, emissive: 0x9fe6ff, weapon: 'longsword' });
 scene.add(duoAK.group); duoAK.group.name = 'duo-vesper'; duoAK.group.visible = false;
-const duoBK = buildKnight({ scale: DUO_B_BASE_SCALE, armor: 0x493d2b, trim: 0xb98a42, cloth: 0x3a1410, plume: 0x1c130d, emissive: 0xff8a3a, weapon: 'greatsword' });
+const duoBK = buildKnight({ scale: DUO_B_BASE_SCALE, armor: 0x5b7784, trim: 0x7fc6e0, cloth: 0x132b36, plume: 0x9fc6d0, emissive: 0x7fd8ff, weapon: 'greatsword' });
 scene.add(duoBK.group); duoBK.group.name = 'duo-morrow'; duoBK.group.visible = false;
 const duoAShadow = blobShadow(2.9, 0.40); duoAShadow.visible = false;
 const duoBShadow = blobShadow(3.9, 0.46); duoBShadow.visible = false;
 {
   const p = duoAK.parts;
   p.shield.visible = false;
-  const haloMat = new THREE.MeshBasicMaterial({ color: 0xf0d9a0, transparent: true, opacity: 0.42, blending: THREE.AdditiveBlending, depthWrite: false });
+  const haloMat = new THREE.MeshBasicMaterial({ color: 0xcfefff, transparent: true, opacity: 0.42, blending: THREE.AdditiveBlending, depthWrite: false });
   const halo = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.018, 6, 40), haloMat);
   halo.position.set(0, 1.08, -0.04); halo.rotation.x = Math.PI / 2; p.body.add(halo); p.halo = halo; p.haloMat = haloMat;
-  const maskMat = new THREE.MeshStandardMaterial({ color: 0xefe2bb, metalness: 0.55, roughness: 0.36, emissive: 0xe4c470, emissiveIntensity: 0.42 });
+  const maskMat = new THREE.MeshStandardMaterial({ color: 0xdff6ff, metalness: 0.55, roughness: 0.36, emissive: 0x9fe6ff, emissiveIntensity: 0.42 });
   const mask = new THREE.Mesh(new RoundedBoxGeometry(0.24, 0.24, 0.08, 3, 0.04), maskMat);
   mask.position.set(0, 0.05, 0.205); p.head.add(mask);
   for (let i = 0; i < 4; i++) {
     const notch = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.07, 0.02), new THREE.MeshBasicMaterial({ color: 0x080604 }));
     notch.position.set((i - 1.5) * 0.046, 0.15, 0.252); notch.rotation.z = (i - 1.5) * 0.18; p.head.add(notch);
   }
-  const wickMat = new THREE.MeshBasicMaterial({ color: 0xffe6a0, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+  const wickMat = new THREE.MeshBasicMaterial({ color: 0xdff6ff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
   p.candles = [];
   for (let i = 0; i < 3; i++) {
     const a = (i - 1) * 0.34;
-    const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.024, 0.34 + i * 0.05, 6), new THREE.MeshStandardMaterial({ color: 0xd8cba8, roughness: 0.8 }));
+    const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.024, 0.34 + i * 0.05, 6), new THREE.MeshStandardMaterial({ color: 0xb8d4df, roughness: 0.8 }));
     stick.position.set(Math.sin(a) * 0.24, 0.72 + i * 0.04, -0.20 + Math.cos(a) * 0.03); p.body.add(stick);
-    const flame = new THREE.Sprite(new THREE.SpriteMaterial({ map: fireGlowTex, color: 0xffe6a0, transparent: true, opacity: 0.82, blending: THREE.AdditiveBlending, depthWrite: false }));
+    const flame = new THREE.Sprite(new THREE.SpriteMaterial({ map: fireGlowTex, color: 0xbfeaff, transparent: true, opacity: 0.82, blending: THREE.AdditiveBlending, depthWrite: false }));
     flame.scale.setScalar(0.18); flame.position.set(stick.position.x, stick.position.y + 0.22, stick.position.z); p.body.add(flame); p.candles.push(flame);
   }
-  p.visor.material.emissive.setHex(0xffe6a0);
-  p.keyLight = new THREE.PointLight(0xffe6a0, 22, 18, 1.9); p.keyLight.position.set(1.2, 3.4, 2.4); duoAK.group.add(p.keyLight);
+  p.visor.material.emissive.setHex(0x9fe6ff);
+  p.keyLight = new THREE.PointLight(0xbfeaff, 22, 18, 1.9); p.keyLight.position.set(1.2, 3.4, 2.4); duoAK.group.add(p.keyLight);
 }
 {
   const p = duoBK.parts;
   p.shield.visible = false;
-  const bellyMat = new THREE.MeshStandardMaterial({ color: 0x3b2c1e, metalness: 0.38, roughness: 0.82, map: leatherTex });
+  const bellyMat = new THREE.MeshStandardMaterial({ color: 0x3b5a66, metalness: 0.38, roughness: 0.82, map: leatherTex });
   const belly = new THREE.Mesh(new THREE.SphereGeometry(0.45, 20, 16), bellyMat);
   belly.position.set(0, 0.12, 0.24); belly.scale.set(1.06, 0.92, 0.72); belly.castShadow = true; p.torso.add(belly);
-  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.22, 0.04), new THREE.MeshStandardMaterial({ color: 0x9b7438, metalness: 0.75, roughness: 0.42 }));
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.22, 0.04), new THREE.MeshStandardMaterial({ color: 0x6fa6c0, metalness: 0.75, roughness: 0.42 }));
   plate.position.set(0, 0.08, 0.055); belly.add(plate);
   for (let i = 0; i < 4; i++) {
-    const chain = new THREE.Mesh(new THREE.TorusGeometry(0.30 + i * 0.025, 0.012, 4, 18), new THREE.MeshStandardMaterial({ color: 0x806028, metalness: 0.9, roughness: 0.45 }));
+    const chain = new THREE.Mesh(new THREE.TorusGeometry(0.30 + i * 0.025, 0.012, 4, 18), new THREE.MeshStandardMaterial({ color: 0x6fa6c0, metalness: 0.9, roughness: 0.45 }));
     chain.position.set(0, 0.62, -0.02); chain.rotation.x = Math.PI / 2; p.torso.add(chain);
   }
-  const bellMat = new THREE.MeshStandardMaterial({ color: 0x9b7438, metalness: 0.92, roughness: 0.34, emissive: 0x6b3e12, emissiveIntensity: 0.45 });
+  const bellMat = new THREE.MeshStandardMaterial({ color: 0x8fc6d8, metalness: 0.92, roughness: 0.34, emissive: 0x4a8ca8, emissiveIntensity: 0.45 });
   const bell = new THREE.Group(); bell.position.set(0, -0.42, 0.06); p.armL.hand.add(bell);
   const bellBody = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.30, 0.38, 12, 1, true), bellMat);
   bellBody.position.y = -0.18; bellBody.castShadow = true; bell.add(bellBody);
   const bellLip = new THREE.Mesh(new THREE.TorusGeometry(0.30, 0.035, 6, 18), bellMat);
   bellLip.position.y = -0.37; bellLip.rotation.x = Math.PI / 2; bell.add(bellLip);
-  const clapper = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 8), new THREE.MeshStandardMaterial({ color: 0x2a1b0c, metalness: 0.8, roughness: 0.5 }));
+  const clapper = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 8), new THREE.MeshStandardMaterial({ color: 0x13242b, metalness: 0.8, roughness: 0.5 }));
   clapper.position.y = -0.40; bell.add(clapper);
   p.bell = bell; p.bellMat = bellMat;
-  p.visor.material.emissive.setHex(0xff8a3a);
-  p.keyLight = new THREE.PointLight(0xff8a3a, 18, 18, 1.9); p.keyLight.position.set(-1.8, 3.0, 2.2); duoBK.group.add(p.keyLight);
+  p.visor.material.emissive.setHex(0x7fd8ff);
+  p.keyLight = new THREE.PointLight(0x7fd8ff, 18, 18, 1.9); p.keyLight.position.set(-1.8, 3.0, 2.2); duoBK.group.add(p.keyLight);
 }
 
 const witchShadow = blobShadow(3.1, 0.36); witchShadow.visible = false;
@@ -3836,14 +3846,15 @@ function hideInfernoFX() {
 const hexBolts = [];
 const hexBoltGeo = new THREE.SphereGeometry(0.2, 8, 6);
 const hexBoltCoreMat = new THREE.MeshBasicMaterial({ color: 0xe6d2ff });
-function spawnHexBolt(origin, angle, speed, dmg) {
+const frostBoltCoreMat = new THREE.MeshBasicMaterial({ color: 0xdff6ff });
+function spawnHexBolt(origin, angle, speed, dmg, frost = false) {
   const grp = new THREE.Group();
-  const core = new THREE.Mesh(hexBoltGeo, hexBoltCoreMat); grp.add(core);
-  const glow = new THREE.Sprite(hexEmberMat); glow.scale.setScalar(1.1); grp.add(glow);
+  const core = new THREE.Mesh(hexBoltGeo, frost ? frostBoltCoreMat : hexBoltCoreMat); grp.add(core);
+  const glow = new THREE.Sprite(frost ? lunarEmberMat : hexEmberMat); glow.scale.setScalar(frost ? 1.35 : 1.1); grp.add(glow);
   grp.position.copy(origin);
   const vel = new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle)).multiplyScalar(speed);
   scene.add(grp);
-  hexBolts.push({ grp, vel, life: 4.2, dmg, t: 0 });
+  hexBolts.push({ grp, vel, life: 4.2, dmg, t: 0, frost });
 }
 function spawnHexBoltVolley(count, spread, speed, dmg) {
   const origin = new THREE.Vector3(W.pos.x, 2.0, W.pos.z);
@@ -3851,6 +3862,14 @@ function spawnHexBoltVolley(count, spread, speed, dmg) {
   for (let i = 0; i < count; i++) {
     const off = (i - (count - 1) / 2) * spread;
     spawnHexBolt(origin, base + off, speed + Math.random() * 0.8, dmg);
+  }
+  sfx.cast();
+}
+function spawnFrostBoltVolley(origin, count, spread, speed, dmg) {
+  const base = Math.atan2(P.pos.x - origin.x, P.pos.z - origin.z);
+  for (let i = 0; i < count; i++) {
+    const off = (i - (count - 1) / 2) * spread;
+    spawnHexBolt(origin, base + off, speed + Math.random() * 0.6, dmg, true);
   }
   sfx.cast();
 }
@@ -3862,9 +3881,9 @@ function updateHexBolts(dt) {
     b.grp.position.addScaledVector(b.vel, dt);
     b.grp.position.y = 1.25 + Math.sin(b.t * 8) * 0.12;
     b.grp.rotation.y += dt * 9;
-    if (Math.random() < 0.5) spawnSparks(b.grp.position, 1, 0x9b5cff, 0.7);
+    if (Math.random() < 0.5) spawnSparks(b.grp.position, 1, b.frost ? 0xbfeaff : 0x9b5cff, 0.7);
     if (P.state !== 'dead' && Math.hypot(P.pos.x - b.grp.position.x, P.pos.z - b.grp.position.z) < 0.72) {
-      damagePlayer(b.dmg, b.grp.position, 'hex');
+      damagePlayer(b.dmg, b.grp.position, b.frost ? 'frost' : 'hex');
       removeHexBolt(i); continue;
     }
     const dx = b.grp.position.x - ARENA.center.x, dz = b.grp.position.z - ARENA.center.z;
@@ -3882,26 +3901,28 @@ function clearHexBolts() {
 const hexPillars = [];
 function spawnHexPillar(x, z, delay = 1.2, radius = 2.0, dmg = 44, mult = 1, lunar = false, theme = 'witch') {
   const isFang = theme === 'fang';
+  const isFrost = theme === 'frost';
+  const ice = lunar || isFrost;
   const grp = new THREE.Group(); grp.position.set(x, 0, z); scene.add(grp);
-  const ringMat = new THREE.MeshBasicMaterial({ color: isFang ? 0xff2a5e : lunar ? 0xdce9ff : 0x9b5cff, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
-  const fillMat = new THREE.MeshBasicMaterial({ color: isFang ? 0x7a0b3a : lunar ? 0xff9ec2 : 0xd54aff, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+  const ringMat = new THREE.MeshBasicMaterial({ color: isFang ? 0xff2a5e : isFrost ? 0xbfeaff : lunar ? 0xdce9ff : 0x9b5cff, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+  const fillMat = new THREE.MeshBasicMaterial({ color: isFang ? 0x7a0b3a : isFrost ? 0x9fe6ff : lunar ? 0xff9ec2 : 0xd54aff, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
   const ring = new THREE.Mesh(pillarRingGeo, ringMat);
   ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05; ring.scale.setScalar(radius); grp.add(ring);
   const fill = new THREE.Mesh(pillarFillGeo, fillMat);
   fill.rotation.x = -Math.PI / 2; fill.position.y = 0.04; fill.scale.setScalar(radius * 0.2); grp.add(fill);
   const fire = new THREE.Group(); fire.visible = false; grp.add(fire);
-  const flameCount = lunar ? 4 : 6;
+  const flameCount = ice ? 4 : 6;
   for (let i = 0; i < flameCount; i++) {
     const isOuter = i % 2 === 0;
-    const flameMat = isFang ? (isOuter ? eclipseFlameOuterMat : eclipseFlameCoreMat) : lunar ? (isOuter ? lunarFlameOuterMat : lunarFlameCoreMat) : (isOuter ? hexFlameOuterMat : hexFlameCoreMat);
+    const flameMat = isFang ? (isOuter ? eclipseFlameOuterMat : eclipseFlameCoreMat) : ice ? (isOuter ? lunarFlameOuterMat : lunarFlameCoreMat) : (isOuter ? hexFlameOuterMat : hexFlameCoreMat);
     const s = new THREE.Sprite(flameMat);
-    s.position.set((Math.random() - 0.5) * radius * 0.5, 1.0 + i * (lunar ? 1.5 : 1.05), (Math.random() - 0.5) * radius * 0.5);
+    s.position.set((Math.random() - 0.5) * radius * 0.5, 1.0 + i * (ice ? 1.5 : 1.05), (Math.random() - 0.5) * radius * 0.5);
     s.scale.set(radius * (isOuter ? 2.6 - i * 0.12 : 1.15), 2.0 + Math.random() * 0.7, 1);
     fire.add(s);
   }
-  const glow = new THREE.Sprite(isFang ? eclipseEmberMat : lunar ? lunarEmberMat : hexEmberMat);
+  const glow = new THREE.Sprite(isFang ? eclipseEmberMat : ice ? lunarEmberMat : hexEmberMat);
   glow.scale.setScalar(radius * 4.2); glow.position.y = 0.9; fire.add(glow);
-  hexPillars.push({ grp, ring, fill, ringMat, fillMat, fire, x, z, radius, dmg, mult, lunar, fang: isFang, t: 0, delay, state: 'indicator', eruptT: 0 });
+  hexPillars.push({ grp, ring, fill, ringMat, fillMat, fire, x, z, radius, dmg, mult, lunar: ice, frost: isFrost, fang: isFang, t: 0, delay, state: 'indicator', eruptT: 0 });
 }
 function updateHexPillars(dt) {
   for (let i = hexPillars.length - 1; i >= 0; i--) {
@@ -3919,10 +3940,10 @@ function updateHexPillars(dt) {
         p.state = 'erupt'; p.eruptT = 0;
         p.fire.visible = true; p.ring.visible = false; p.fill.visible = false;
         sfx.pillar(); G.shake = Math.max(G.shake, 0.35);
-        spawnRing(new THREE.Vector3(p.x, 0, p.z), p.fang ? 0xff2a5e : p.lunar ? 0xe8f1ff : 0x9b5cff, p.radius * 2.6);
-        spawnSparks(new THREE.Vector3(p.x, 0.5, p.z), p.fang ? 18 : p.lunar ? 8 : 16, p.fang ? 0xff4d6d : p.lunar ? 0xffd4e4 : 0x9b5cff, p.fang ? 7 : p.lunar ? 7 : 6);
+        spawnRing(new THREE.Vector3(p.x, 0, p.z), p.fang ? 0xff2a5e : p.frost ? 0xbfeaff : p.lunar ? 0xe8f1ff : 0x9b5cff, p.radius * 2.6);
+        spawnSparks(new THREE.Vector3(p.x, 0.5, p.z), p.fang ? 18 : p.lunar ? 8 : 16, p.fang ? 0xff4d6d : p.frost ? 0xdff6ff : p.lunar ? 0xffd4e4 : 0x9b5cff, p.fang ? 7 : p.lunar ? 7 : 6);
         if (P.state !== 'dead' && Math.hypot(P.pos.x - p.x, P.pos.z - p.z) < p.radius + 0.35) {
-          damagePlayer(Math.round(p.dmg * p.mult), new THREE.Vector3(p.x, 0, p.z), 'curse');
+          damagePlayer(Math.round(p.dmg * p.mult), new THREE.Vector3(p.x, 0, p.z), p.frost ? 'frost' : 'curse');
         }
       }
     } else {
@@ -4448,8 +4469,8 @@ const BOSSES = {
   },
   duo: {
     id: 'duo', name: 'VESPER & MORROW', epithet: 'THE HOLLOW CHOIR', glyph: '♱',
-    accent: '#e4c470', deep: '#3b2a0e', difficulty: 'THE FINAL HYMN',
-    desc: 'Two voices bound in one sepulchre. When one twin falls, the other sings it back — break the requiem before the choir is made whole.',
+    accent: '#9ee6ff', deep: '#173d4b', difficulty: 'THE FINAL HYMN',
+    desc: 'Two frostbound voices in one frozen sepulchre. Vesper calls the blizzard from afar while Morrow advances like a glacier — when one falls, the other sings it back.',
     bossName: 'VESPER & MORROW  ·  THE HOLLOW CHOIR',
     arena: ARENAS.duo,
   },
@@ -4648,12 +4669,12 @@ const F = {
   phase2: false, staggerAcc: 0, deadT: 0, animT: 0, lastAttack: '', mark: new THREE.Vector3(),
 };
 const DUO_ATK = {
-  thrust: { wind: 0.52, active: 0.26, recover: 0.72, range: 4.6, arc: 0.48 },
-  sweep: { wind: 0.66, active: 0.32, recover: 0.86, range: 4.8, arc: 1.55 },
-  slam: { wind: 0.88, active: 0.30, recover: 1.02, range: 4.5, arc: 2.7 },
-  charge: { wind: 0.64, active: 0.48, recover: 0.98, range: 2.1, arc: 0.9 },
-  toll: { wind: 1.18, active: 0.34, recover: 1.18, range: DUO_R, arc: Math.PI * 2 },
-  echo: { wind: 0.82, active: 0.38, recover: 1.05, range: DUO_R, arc: Math.PI * 2 },
+  frostbolt: { wind: 0.64, active: 0.20, recover: 0.78, range: DUO_R, arc: Math.PI * 2 },
+  frostfall: { wind: 1.06, active: 0.24, recover: 1.02, range: DUO_R, arc: Math.PI * 2 },
+  frostwave: { wind: 0.94, active: 0.30, recover: 0.96, range: DUO_R, arc: Math.PI * 2 },
+  cleave: { wind: 0.60, active: 0.30, recover: 0.88, range: 4.9, arc: 1.5 },
+  slam: { wind: 0.90, active: 0.32, recover: 1.05, range: 4.6, arc: 2.7 },
+  charge: { wind: 0.62, active: 0.50, recover: 0.98, range: 2.1, arc: 0.9 },
 };
 const duoTwins = [
   {
@@ -4677,7 +4698,7 @@ const D = {
   pos: new THREE.Vector3(DUO_CENTER.x, 0, DUO_CENTER.z - 3), yaw: Math.PI,
   hp: TUNE.duoHP * 2, maxHP: TUNE.duoHP * 2, state: 'dormant', t: 0, target: 0,
   decideCd: 0, phase2: false, requiemBy: -1, requiemT: 0, reviveT: 0, tollCd: 0,
-  animT: 0, deadT: 0, lastAttack: '',
+  attackOwner: -1, attackCd: 0, animT: 0, deadT: 0, lastAttack: '',
 };
 function duoSyncHP() {
   let hp = 0, maxHP = 0;
@@ -4720,60 +4741,72 @@ function resetDuo() {
   duoTwins[0].pos.copy(duoTwins[0].home); duoTwins[1].pos.copy(duoTwins[1].home);
   D.pos.set(DUO_CENTER.x, 0, DUO_CENTER.z - 3); D.yaw = Math.PI;
   D.state = 'dormant'; D.t = 0; D.target = 0; D.decideCd = 0; D.phase2 = false;
-  D.requiemBy = -1; D.requiemT = 0; D.reviveT = 0; D.tollCd = 0; D.animT = 0; D.deadT = 0; D.lastAttack = '';
+  D.requiemBy = -1; D.requiemT = 0; D.reviveT = 0; D.tollCd = 0; D.attackOwner = -1; D.attackCd = 0; D.animT = 0; D.deadT = 0; D.lastAttack = '';
   duoSyncHP();
   clearBossHazards(); clearHexHazards();
   telegraphEl.classList.add('hidden');
   if (G.bossId === 'duo') { bossPlate.classList.add('hidden'); G.bossActive = false; G.locked = false; lockHint.classList.add('hidden'); }
 }
 function duoStartAttack(T) {
-  const other = duoOther(T);
+  if (D.attackOwner >= 0 || D.attackCd > 0 || D.requiemBy >= 0) return false;
   const dist = dist2D(T.pos, P.pos);
   let opts;
-  if (D.requiemBy >= 0) opts = T.id === 0 ? ['thrust', 'sweep'] : ['slam', 'charge'];
-  else if (T.id === 0) opts = dist < 5.0 ? ['thrust', 'sweep', 'echo'] : ['echo', 'thrust'];
-  else opts = dist < 5.2 ? ['slam', 'sweep', 'charge'] : ['charge', 'echo'];
-  if (D.tollCd <= 0 && D.requiemBy < 0 && !(other.state === 'active' && other.attackKind === 'toll')) {
-    opts.push('toll', 'toll');
+  if (T.id === 0) opts = dist > 7.2 ? ['frostbolt', 'frostfall', 'frostwave'] : ['frostwave', 'frostfall', 'frostbolt'];
+  else opts = dist < 5.4 ? ['cleave', 'slam', 'charge'] : ['charge'];
+  if (opts.length > 1 && T.lastAttack) {
+    const filtered = opts.filter(k => k !== T.lastAttack);
+    if (filtered.length) opts = filtered;
   }
-  if (opts.length > 1 && T.lastAttack) opts = opts.filter(k => k !== T.lastAttack);
-  const pick = opts[Math.random() * opts.length | 0] || 'thrust';
+  const pick = opts[Math.random() * opts.length | 0] || opts[0];
   T.attackKind = pick; T.state = 'windup'; T.t = 0; T.hasHit = false; T.lastAttack = pick;
-  D.lastAttack = pick;
-  if (pick === 'toll') D.tollCd = 9.5;
-  else if (pick === 'echo') D.tollCd = Math.max(0, D.tollCd - 0.6);
-  if (pick === 'toll' || pick === 'slam' || pick === 'charge') telegraphEl.classList.remove('hidden');
-  sfx.swing();
+  D.attackOwner = T.id; D.attackCd = 0; D.lastAttack = pick;
+  if (pick === 'frostfall' || pick === 'frostwave' || pick === 'slam' || pick === 'charge') telegraphEl.classList.remove('hidden');
+  if (T.id === 0) sfx.cast(); else sfx.swing();
+  return true;
 }
 function duoRelease(T) {
   T.state = 'active'; T.t = 0; T.hasHit = false;
   const mult = 1 + G.ng * 0.25;
   const kind = T.attackKind;
   telegraphEl.classList.add('hidden');
-  if (kind === 'toll') {
+  if (kind === 'frostbolt') {
     T.hasHit = true;
-    spawnHexWave(T.pos.x, T.pos.z, Math.round(TUNE.duoDmg.toll * mult), 8.6, DUO_R, 0xe4c470);
-    spawnRing(T.pos, 0xe4c470, 10);
-    spawnRing(T.pos, 0xfff0c8, 6);
-    showSub('THE BELL TOLLS — LEAVE THE RING');
-    sfx.slam(); G.shake = Math.max(G.shake, 0.45);
-  } else if (kind === 'echo') {
-    T.hasHit = true;
-    spawnHexWave(T.pos.x, T.pos.z, Math.round(TUNE.duoDmg.echo * mult), 12.5, DUO_R, 0xf0d9a0);
-    showSub('THE CHOIR ECHOES — KEEP MOVING');
+    spawnFrostBoltVolley(new THREE.Vector3(T.pos.x, 2.0, T.pos.z), 4, 0.16, 11.5, Math.round(TUNE.duoDmg.frostbolt * mult));
+    showSub('FROST SEEKS YOU — KEEP MOVING');
     sfx.cast();
+  } else if (kind === 'frostfall') {
+    T.hasHit = true;
+    const dmg = Math.round(TUNE.duoDmg.frostfall * mult);
+    const baseA = Math.random() * Math.PI * 2;
+    for (let i = 0; i < 3; i++) {
+      const a = baseA + i * Math.PI * 2 / 3 + (Math.random() - 0.5) * 0.45;
+      const r = 1.5 + Math.random() * 2.6;
+      const spot = new THREE.Vector3(P.pos.x + Math.cos(a) * r, 0, P.pos.z + Math.sin(a) * r);
+      clampToActiveArena(spot, 2.4);
+      spawnHexPillar(spot.x, spot.z, 0.85 + i * 0.16, 2.15, dmg, 1, false, 'frost');
+    }
+    showSub('FROSTFALL — LEAVE THE ICE');
+    sfx.pillarWarn();
+  } else if (kind === 'frostwave') {
+    T.hasHit = true;
+    spawnHexWave(T.pos.x, T.pos.z, Math.round(TUNE.duoDmg.frostwave * mult), 11, DUO_R, 0xbfeaff);
+    spawnRing(T.pos, 0xbfeaff, 10);
+    spawnRing(T.pos, 0xe8f7ff, 6);
+    showSub('THE FROZEN HYMN SPREADS — LEAVE THE RING');
+    sfx.cast(); G.shake = Math.max(G.shake, 0.3);
   } else if (kind === 'charge') {
     T.chargeDir.set(P.pos.x - T.pos.x, 0, P.pos.z - T.pos.z).normalize();
     sfx.dash();
   } else if (kind === 'slam') {
-    spawnRing(T.pos, 0xe4c470, 7);
+    spawnRing(T.pos, 0xbfeaff, 7);
+    spawnSparks(new THREE.Vector3(T.pos.x, 0.5, T.pos.z), 14, 0xdff6ff, 5);
     sfx.heavySwing();
   } else {
     sfx.heavySwing();
   }
 }
 function duoMeleeHit(T) {
-  if (T.hasHit || T.state !== 'active' || P.state === 'dead') return;
+  if (T.id === 0 || T.hasHit || T.state !== 'active' || P.state === 'dead') return;
   const s = DUO_ATK[T.attackKind];
   if (!s) return;
   if (T.attackKind === 'charge') {
@@ -4811,16 +4844,16 @@ function updateDuoTwin(T, dt) {
   }
   if (T.state === 'windup') {
     T.yaw += angDiff(toP, T.yaw) * Math.min(1, 2.0 * dt);
-    const s = DUO_ATK[T.attackKind] || DUO_ATK.thrust;
+    const s = DUO_ATK[T.attackKind] || (T.id === 0 ? DUO_ATK.frostbolt : DUO_ATK.cleave);
     if (T.t >= s.wind) duoRelease(T);
     return;
   }
   if (T.state === 'active') {
-    const s = DUO_ATK[T.attackKind] || DUO_ATK.thrust;
+    const s = DUO_ATK[T.attackKind] || (T.id === 0 ? DUO_ATK.frostbolt : DUO_ATK.cleave);
     if (T.attackKind === 'charge') {
       T.pos.addScaledVector(T.chargeDir, 13.5 * dt);
       if (G.inArena) clampToActiveArena(T.pos, 1.8);
-      if (Math.random() < 0.8) spawnSparks(new THREE.Vector3(T.pos.x, 0.4, T.pos.z), 1, 0xe4c470, 2.2);
+      if (Math.random() < 0.8) spawnSparks(new THREE.Vector3(T.pos.x, 0.4, T.pos.z), 1, 0xbfeaff, 2.2);
     }
     duoMeleeHit(T);
     if (T.t >= s.active) { T.state = 'recover'; T.t = 0; }
@@ -4828,8 +4861,9 @@ function updateDuoTwin(T, dt) {
   }
   if (T.state === 'recover') {
     T.yaw += angDiff(toP, T.yaw) * Math.min(1, 1.2 * dt);
-    const s = DUO_ATK[T.attackKind] || DUO_ATK.thrust;
+    const s = DUO_ATK[T.attackKind] || (T.id === 0 ? DUO_ATK.frostbolt : DUO_ATK.cleave);
     if (T.t >= s.recover) {
+      if (D.attackOwner === T.id) { D.attackOwner = -1; D.attackCd = 0.34; }
       T.state = 'idle'; T.t = 0;
       T.decideCd = 0.42 + Math.random() * 0.62;
       if (D.phase2) T.decideCd *= 0.78;
@@ -4838,9 +4872,9 @@ function updateDuoTwin(T, dt) {
   }
   if (T.state === 'idle' || T.state === 'advance') {
     T.yaw += angDiff(toP, T.yaw) * Math.min(1, 2.1 * dt);
-    const desired = T.id === 0 ? 3.3 : 4.2;
+    const desired = T.id === 0 ? 9.0 : 3.5;
     const d = Math.max(0.001, dist2D(T.pos, P.pos));
-    const speed = TUNE.duoSpeed * (T.id === 0 ? 1.0 : 0.82) * (D.phase2 ? 1.12 : 1);
+    const speed = TUNE.duoSpeed * (T.id === 0 ? 0.78 : 1.08) * (D.phase2 ? 1.12 : 1);
     if (d > desired + 0.35) {
       T.pos.x += Math.sin(toP) * speed * dt;
       T.pos.z += Math.cos(toP) * speed * dt;
@@ -4860,19 +4894,20 @@ function updateDuoTwin(T, dt) {
     }
     if (G.inArena) clampToActiveArena(T.pos, 1.8);
     T.decideCd -= dt;
-    if (T.decideCd <= 0 && P.state !== 'dead' && D.requiemBy < 0) duoStartAttack(T);
+    if (T.decideCd <= 0 && D.attackOwner < 0 && D.attackCd <= 0 && P.state !== 'dead' && D.requiemBy < 0) duoStartAttack(T);
     return;
   }
 }
 function duoDown(T) {
   if (T.state === 'dead') return;
   T.state = 'dead'; T.t = 0; T.deadT = 0; T.attackKind = ''; T.hasHit = false;
+  if (D.attackOwner === T.id) { D.attackOwner = -1; D.attackCd = 0.3; }
   T.shadow.visible = false;
   if (T.k.parts.swordGlow) T.k.parts.swordGlow.material.opacity = 0;
   duoSyncHP();
   bossNameEl.textContent = duoName();
-  spawnRing(T.pos, 0xe4c470, 9);
-  spawnSparks(new THREE.Vector3(T.pos.x, 1.5, T.pos.z), 34, 0xf0d9a0, 7);
+  spawnRing(T.pos, 0xbfeaff, 9);
+  spawnSparks(new THREE.Vector3(T.pos.x, 1.5, T.pos.z), 34, 0xdff6ff, 7);
   const other = duoOther(T);
   if (other.state === 'dead') { duoDie(); return; }
   D.requiemBy = -1; D.requiemT = 0; D.reviveT = 0;
@@ -4892,28 +4927,28 @@ function duoRevive(fallen, singer) {
   fallen.pos.copy(fallen.home); fallen.yaw = Math.atan2(P.pos.x - fallen.pos.x, P.pos.z - fallen.pos.z);
   fallen.k.group.visible = true; fallen.shadow.visible = true;
   fallen.k.group.position.copy(fallen.pos); fallen.k.group.rotation.y = fallen.yaw;
-  D.requiemBy = -1; D.requiemT = 0; D.reviveT = 0;
+  D.requiemBy = -1; D.requiemT = 0; D.reviveT = 0; D.attackOwner = -1; D.attackCd = 0.35;
   singer.state = 'recover'; singer.t = 0; singer.attackKind = '';
   duoSyncHP();
   bossNameEl.textContent = duoName();
   showCenter('THE HYMN COMPLETES', `${fallen.name} rises — break the choir before it sings again`);
-  spawnRing(fallen.pos, 0xe4c470, 14);
-  spawnRing(fallen.pos, 0xfff0c8, 8);
-  spawnSparks(new THREE.Vector3(fallen.pos.x, 1.8, fallen.pos.z), 48, 0xf0d9a0, 8);
+  spawnRing(fallen.pos, 0xbfeaff, 14);
+  spawnRing(fallen.pos, 0xe8f7ff, 8);
+  spawnSparks(new THREE.Vector3(fallen.pos.x, 1.8, fallen.pos.z), 48, 0xdff6ff, 8);
   sfx.roar(); G.shake = Math.max(G.shake, 0.7);
   intensifyBossMusic();
 }
 function duoDie() {
   if (D.state === 'dead') return;
-  D.state = 'dead'; D.requiemBy = -1; G.bossDead = true; G.bossActive = false;
+  D.state = 'dead'; D.requiemBy = -1; D.attackOwner = -1; D.attackCd = 0; G.bossDead = true; G.bossActive = false;
   G.defeated.duo = true;
   stopBossMusic(); setLock(false);
   clearBossHazards(); clearHexHazards(); telegraphEl.classList.add('hidden');
   bossNameEl.textContent = duoName();
   sfx.death(); sfx.victory();
-  spawnSparks(new THREE.Vector3(DUO_CENTER.x, 2.0, DUO_CENTER.z - 2), 72, 0xf0d9a0, 11);
-  spawnRing(duoTwins[0].pos, 0xe4c470, 18);
-  spawnRing(duoTwins[1].pos, 0xfff0c8, 18);
+  spawnSparks(new THREE.Vector3(DUO_CENTER.x, 2.0, DUO_CENTER.z - 2), 72, 0xdff6ff, 11);
+  spawnRing(duoTwins[0].pos, 0xbfeaff, 18);
+  spawnRing(duoTwins[1].pos, 0xe8f7ff, 18);
   G.drops = bossDropsFor('duo');
   setTimeout(showDropScreen, 1600);
 }
@@ -4927,14 +4962,16 @@ function damageDuo(dmg, poiseDmg = 26) {
   target.flashT = 0.12;
   target.staggerAcc += poiseDmg;
   sfx.hitFlesh(); G.shake = Math.min(0.5, G.shake + 0.15); G.hitstop = 0.045;
-  spawnSparks(new THREE.Vector3(target.pos.x, 1.75, target.pos.z), 12, target.id === 0 ? 0xffe6a0 : 0xff9a5e, 6);
+  spawnSparks(new THREE.Vector3(target.pos.x, 1.75, target.pos.z), 12, target.id === 0 ? 0xbfeaff : 0x7fd8ff, 6);
   if (target.state === 'requiem') {
     target.state = 'stagger'; target.t = 0;
+    if (D.attackOwner === target.id) D.attackOwner = -1;
     D.requiemBy = -1; D.requiemT = 0; D.reviveT = 0;
     showSub('THE REQUIEM BREAKS');
     sfx.stagger();
   } else if (target.staggerAcc >= 130 && target.state !== 'stagger' && target.state !== 'windup' && target.hp > 0) {
     target.staggerAcc = 0; target.state = 'stagger'; target.t = 0; target.attackKind = '';
+    if (D.attackOwner === target.id) { D.attackOwner = -1; D.attackCd = 0.26; }
     telegraphEl.classList.add('hidden');
     showSub(`${target.name} STAGGERS — STRIKE NOW`);
     sfx.stagger();
@@ -4942,9 +4979,9 @@ function damageDuo(dmg, poiseDmg = 26) {
   duoSyncHP();
   if (!D.phase2 && D.hp < D.maxHP * 0.5 && D.hp > 0) {
     D.phase2 = true;
-    showCenter('THE HOLLOW CHOIR RISES', 'the twins sing as one — their cadence quickens');
+    showCenter('THE FROZEN CHOIR RISES', 'the twins sing as one — their cadence quickens');
     intensifyBossMusic();
-    spawnRing(D.pos, 0xe4c470, 15);
+    spawnRing(D.pos, 0xbfeaff, 15);
   }
   if (target.hp <= 0) duoDown(target);
   else if (prev > 0 && D.requiemBy >= 0 && target.id === D.requiemBy) {
@@ -4956,6 +4993,7 @@ function updateDuo(dt) {
   if (D.state === 'dormant') return;
   D.t += dt; D.animT += dt;
   D.tollCd = Math.max(0, D.tollCd - dt);
+  D.attackCd = Math.max(0, D.attackCd - dt);
   duoSelectTarget();
   for (const T of duoTwins) {
     if (T.hp <= 0 && T.state !== 'dead') duoDown(T);
@@ -4970,13 +5008,14 @@ function updateDuo(dt) {
         D.requiemT += dt;
         if (singer.state !== 'requiem' && D.requiemT >= 2.4 && ['idle', 'advance', 'recover'].includes(singer.state)) {
           singer.state = 'requiem'; singer.t = 0; singer.attackKind = ''; singer.hasHit = false;
+          D.attackOwner = -1; D.attackCd = 0;
           telegraphEl.classList.add('hidden');
           showCenter('THE REQUIEM RISES', `strike ${singer.name} before the song completes`);
           sfx.cast();
         }
         if (singer.state === 'requiem') {
           D.reviveT += dt;
-          if (Math.random() < 0.16) spawnSparks(new THREE.Vector3(fallen.pos.x + (Math.random() - 0.5) * 1.4, 0.3 + Math.random() * 1.6, fallen.pos.z + (Math.random() - 0.5) * 1.4), 1, 0xf0d9a0, 1.2);
+          if (Math.random() < 0.16) spawnSparks(new THREE.Vector3(fallen.pos.x + (Math.random() - 0.5) * 1.4, 0.3 + Math.random() * 1.6, fallen.pos.z + (Math.random() - 0.5) * 1.4), 1, 0xbfeaff, 1.2);
           if (D.reviveT >= 4.6) duoRevive(fallen, singer);
         }
       }
@@ -5007,6 +5046,12 @@ function poseDuo(dt) {
       p.armL.sh.rotation.x = -2.4 + Math.sin(time * 2.2) * 0.1;
       p.armR.sh.rotation.x = -2.4 + Math.sin(time * 2.2 + 1) * 0.1;
       p.armL.el.rotation.x = -0.25; p.armR.el.rotation.x = -0.25;
+    } else if (T.id === 0 && (T.state === 'windup' || T.state === 'active')) {
+      const p = K.parts;
+      const rise = T.state === 'windup' ? -1.15 : -2.05;
+      p.armR.sh.rotation.x = rise + Math.sin(time * 3.2) * 0.08;
+      p.armL.sh.rotation.x = rise * 0.72 + Math.sin(time * 3.2 + 1.2) * 0.08;
+      p.armR.el.rotation.x = -0.35; p.armL.el.rotation.x = -0.6;
     }
     if (K.parts.halo) { K.parts.halo.rotation.z = time * 0.25; K.parts.haloMat.opacity = (T.state === 'requiem' ? 0.9 : 0.38) + Math.sin(time * 2.4 + T.id) * 0.1; }
     if (K.parts.candles) for (let i = 0; i < K.parts.candles.length; i++) K.parts.candles[i].material.opacity = 0.62 + Math.sin(time * 7 + i * 2) * 0.18;
@@ -5403,7 +5448,7 @@ const BOSS_ARRIVAL = {
   witch: ['MORGANA', 'the Nightshade Hex awaits — touch the crystal to summon her'],
   dragon: ['VYTLES, THE DRAGON', 'the caldera breathes — touch the dragon stone to wake him'],
   fang: ['KORVATH, THE ECLIPSE FANG', 'the moonless court waits — touch the eclipse stone'],
-  duo: ['THE HOLLOW CHOIR', 'the sepulchre waits — touch the choir stone to wake the twins'],
+  duo: ['THE FROZEN SEPULCHRE', 'the tundra waits — touch the frostbound stone to wake the twins'],
 };
 
 function showBossArrival(id) {
@@ -5697,8 +5742,8 @@ function travelToWorld(id, source) {
   }
   stopBossMusic();
   chooseBoss(id);
-  showCenter(id === 'witch' ? 'THE NIGHTSHADE HOLLOW' : id === 'dragon' ? 'THE CALDERA' : id === 'fang' ? 'THE MOONLESS COURT' : id === 'duo' ? 'THE HOLLOW CHOIR' : 'THE ASHEN RING',
-    id === 'witch' ? 'a violet forest beyond the veil' : id === 'dragon' ? 'a burning hollow beneath the world' : id === 'fang' ? 'a court where the last light died' : id === 'duo' ? 'a sepulchre where two voices refuse to die' : 'the old meadow, far from the hollow');
+  showCenter(id === 'witch' ? 'THE NIGHTSHADE HOLLOW' : id === 'dragon' ? 'THE CALDERA' : id === 'fang' ? 'THE MOONLESS COURT' : id === 'duo' ? 'THE FROZEN SEPULCHRE' : 'THE ASHEN RING',
+    id === 'witch' ? 'a violet forest beyond the veil' : id === 'dragon' ? 'a burning hollow beneath the world' : id === 'fang' ? 'a court where the last light died' : id === 'duo' ? 'a tundra where two voices refuse to die' : 'the old meadow, far from the hollow');
 }
 function switchBossFromVictory(id) { travelToWorld(id, 'victory'); }
 function switchBossFromVigil(id) { travelToWorld(id, 'vigil'); }
@@ -7474,22 +7519,22 @@ function beginDuo() {
   }
   D.pos.set(DUO_CENTER.x, 0, DUO_CENTER.z - 3); D.yaw = Math.PI;
   D.state = 'active'; D.t = 0; D.target = 0; D.decideCd = 0; D.phase2 = false;
-  D.requiemBy = -1; D.requiemT = 0; D.reviveT = 0; D.tollCd = 2.5; D.animT = 0; D.deadT = 0; D.lastAttack = '';
+  D.requiemBy = -1; D.requiemT = 0; D.reviveT = 0; D.tollCd = 2.5; D.attackOwner = -1; D.attackCd = 0; D.animT = 0; D.deadT = 0; D.lastAttack = '';
   duoSyncHP();
   G.bossActive = true; G.bossDead = false; G.fightTime = 0;
   bossPlate.classList.remove('hidden'); setBossName('duo'); startBossMusic(); setLock(true);
   bossNameEl.textContent = duoName();
   sfx.roar(); G.shake = Math.max(G.shake, 0.72);
-  spawnRing(duoTwins[0].pos, 0xe4c470, 13);
-  spawnRing(duoTwins[1].pos, 0xfff0c8, 16);
-  spawnSparks(new THREE.Vector3(DUO_CENTER.x, 2.0, DUO_CENTER.z - 2), 54, 0xf0d9a0, 9);
-  showCenter('VESPER & MORROW, THE HOLLOW CHOIR', 'one voice falls, the other sings it back');
+  spawnRing(duoTwins[0].pos, 0xbfeaff, 13);
+  spawnRing(duoTwins[1].pos, 0xe8f7ff, 16);
+  spawnSparks(new THREE.Vector3(DUO_CENTER.x, 2.0, DUO_CENTER.z - 2), 54, 0xdff6ff, 9);
+  showCenter('VESPER & MORROW, THE FROZEN CHOIR', 'one voice falls, the other sings it back');
 }
 function touchDuoStone() {
   if (!G.inArena || G.bossActive || G.bossDead || P.state === 'dead') return;
   P.state = 'idle'; P.t = 0;
-  spawnRing(new THREE.Vector3(duoStonePos.x, 0, duoStonePos.z), 0xe4c470, 7);
-  spawnSparks(new THREE.Vector3(duoStonePos.x, 1.7, duoStonePos.z), 28, 0xf0d9a0, 7);
+  spawnRing(new THREE.Vector3(duoStonePos.x, 0, duoStonePos.z), 0xbfeaff, 7);
+  spawnSparks(new THREE.Vector3(duoStonePos.x, 1.7, duoStonePos.z), 28, 0xdff6ff, 7);
   sfx.pillar();
   beginDuo();
 }
@@ -8182,6 +8227,16 @@ function loop() {
     duoStoneGlow.material.opacity = 0.36 + Math.sin(t * 3.0) * 0.14;
     duoStoneMat.emissiveIntensity = 2.1 + Math.sin(t * 4.0) * 0.7 + (D.phase2 ? 0.9 : 0);
     duoLight.intensity = 48 + Math.sin(t * 4.0) * 8 + (D.phase2 ? 12 : 0);
+    for (const f of duoArenaSnow) {
+      const u = f.userData;
+      u.sway += dt * 0.9;
+      f.position.y -= u.vy * dt;
+      f.position.x += Math.sin(u.sway) * dt * u.drift;
+      if (f.position.y < 0.25) {
+        const a = Math.random() * Math.PI * 2, rr = Math.random() * DUO_R * 0.92;
+        f.position.set(DUO_CENTER.x + Math.cos(a) * rr, 12 + Math.random() * 4, DUO_CENTER.z + Math.sin(a) * rr);
+      }
+    }
   }
   if (!G.awakening && altarGem.visible) {
     altarGem.rotation.y = t * 1.1;
@@ -8207,7 +8262,7 @@ function loop() {
   } else if (G.bossId === 'fang') {
     if (Math.random() < 0.4) spawnSparks(new THREE.Vector3(FANG_CENTER.x + (Math.random() - 0.5) * 30, 0.4, FANG_CENTER.z + (Math.random() - 0.5) * 30), 1, Math.random() < 0.5 ? 0xff2a5e : 0x8b5cff, 1.4);
   } else if (G.bossId === 'duo') {
-    if (Math.random() < 0.38) spawnSparks(new THREE.Vector3(DUO_CENTER.x + (Math.random() - 0.5) * 28, 0.4, DUO_CENTER.z + (Math.random() - 0.5) * 28), 1, Math.random() < 0.5 ? 0xe4c470 : 0xfff0c8, 1.3);
+    if (Math.random() < 0.38) spawnSparks(new THREE.Vector3(DUO_CENTER.x + (Math.random() - 0.5) * 28, 0.4, DUO_CENTER.z + (Math.random() - 0.5) * 28), 1, Math.random() < 0.5 ? 0xbfeaff : 0xe8f7ff, 1.3);
   } else if (Math.random() < 0.25) spawnSparks(new THREE.Vector3((Math.random()-0.5)*20, 0.5, (Math.random()-0.5)*20 + 6), 1, Math.random() < 0.5 ? 0xff8c3a : 0x555566, 1.2);
   updateSparks(dt);
   for (let i = rings.length - 1; i >= 0; i--) {
@@ -8236,7 +8291,7 @@ function loop() {
     if (G.bossId === 'witch') { updateHexBolts(dt); updateHexPillars(dt); updateHexWaves(dt); updateMoonBeams(dt); updateSkeletons(dt); }
     else if (G.bossId === 'dragon') { updatePillars(dt); updateFireWaves(dt); }
     else if (G.bossId === 'fang') { updatePillars(dt); updateHexPillars(dt); updateFireWaves(dt); }
-    else if (G.bossId === 'duo') { updateHexWaves(dt); }
+    else if (G.bossId === 'duo') { updateHexBolts(dt); updateHexPillars(dt); updateHexWaves(dt); }
     else { updatePillars(dt); updateFireBolts(dt); updateFireWaves(dt); }
     if (G.bossId === 'duncan') { updateInfernoOrbVisual(dt); updateInfernoMark(dt); updateBossFireAura(dt); }
   }
@@ -8288,7 +8343,7 @@ updateWeaponLabel();
 loop();
 
 // expose for automated checks
-window.__game = { G, P, B, W, V, F, D, TUNE, WEAPONS, SPOILS, BOSS_SHARDS, ALL_SPOILS, RARITY, DROP_POOL, DROP_WEIGHTS, SWORD_DROPS, SPOIL_DROPS, FANG_ATK, WEAPON_ORDER, ARENAS, BOSSES, BOSS_ORDER, bossUnlocked, bossShardFor, bossDropsFor, chooseBoss, enterBossArena, beginWitch, resetWitch, beginDragon, resetDragon, beginFang, resetFang, beginDuo, resetDuo, enterArena, touchStone, updateAwakening, touchWitchStone, touchDragonStone, updateWitchAwakening, updateDragon, poseDragon, dragonStrike, dragonDecide, spawnDragonBreath, spawnDragonStorm, updateFang, poseFang, fangStrike, fangDecide, touchFangStone, damageFang, fangEchoes, fangSlashes, spawnFangSkySlash, updateFangSlashes, clearFangSlashes, updateDuo, poseDuo, touchDuoStone, damageDuo, duoTwins, duoAlive, duoSelectTarget, lockTargetInfo, toggleLock, setCreatorMode, bossMusicInfo: () => bossMusic ? { step: bossMusic.step, tempo: bossMusic.tempo, phase2: bossMusic.phase2, state: bossMusic.ac.state, gain: bossMusic.master.gain.value } : null, stonePos, witchStonePos, dragonStonePos, fangStonePos, duoStonePos, restAtBonfire, damageBoss, damageWitch, damageDragon, damageFang, damagePlayer, equipWeapon, toggleInventory, equipSpoils, unequipSpoils, rollDrops, claimDrops, showDropScreen, spawnPillarBarrage, spawnInfernoBarrage, spawnMeteorStorm, spawnFireBoltVolley, clearBossHazards, clearHexHazards, pillars, fireBolts, fireWaves, hexPillars, hexBolts, hexWaves, skeletons, moonBeams, lunarAvatar, summonSkeletons, spawnMoonBeamVolley, damageSkeleton, damageSkeletonsInArc, saveGame, loadGame, eraseSave, applyWorldStyle, switchBossFromVictory, switchBossFromVigil, toggleVigilMenu, closeVigilMenu, anyVigilFelled, dragonWorldGroup, dragonArenaGroup, dragonK, fangWorldGroup, fangArenaGroup, fangK, fangShadow, duoWorldGroup, duoArenaGroup, duoAK, duoBK, duoAShadow, duoBShadow, spawnHexPillar, spawnFireWave };
+window.__game = { G, P, B, W, V, F, D, TUNE, WEAPONS, SPOILS, BOSS_SHARDS, ALL_SPOILS, RARITY, DROP_POOL, DROP_WEIGHTS, SWORD_DROPS, SPOIL_DROPS, FANG_ATK, WEAPON_ORDER, ARENAS, BOSSES, BOSS_ORDER, bossUnlocked, bossShardFor, bossDropsFor, chooseBoss, enterBossArena, beginWitch, resetWitch, beginDragon, resetDragon, beginFang, resetFang, beginDuo, resetDuo, enterArena, touchStone, updateAwakening, touchWitchStone, touchDragonStone, updateWitchAwakening, updateDragon, poseDragon, dragonStrike, dragonDecide, spawnDragonBreath, spawnDragonStorm, updateFang, poseFang, fangStrike, fangDecide, touchFangStone, damageFang, fangEchoes, fangSlashes, spawnFangSkySlash, updateFangSlashes, clearFangSlashes, updateDuo, poseDuo, touchDuoStone, damageDuo, duoTwins, duoAlive, duoSelectTarget, lockTargetInfo, toggleLock, setCreatorMode, bossMusicInfo: () => bossMusic ? { step: bossMusic.step, tempo: bossMusic.tempo, phase2: bossMusic.phase2, state: bossMusic.ac.state, gain: bossMusic.master.gain.value } : null, stonePos, witchStonePos, dragonStonePos, fangStonePos, duoStonePos, restAtBonfire, damageBoss, damageWitch, damageDragon, damageFang, damagePlayer, equipWeapon, toggleInventory, equipSpoils, unequipSpoils, rollDrops, claimDrops, showDropScreen, spawnPillarBarrage, spawnInfernoBarrage, spawnMeteorStorm, spawnFireBoltVolley, clearBossHazards, clearHexHazards, pillars, fireBolts, fireWaves, hexPillars, hexBolts, hexWaves, skeletons, moonBeams, lunarAvatar, summonSkeletons, spawnMoonBeamVolley, damageSkeleton, damageSkeletonsInArc, saveGame, loadGame, eraseSave, applyWorldStyle, switchBossFromVictory, switchBossFromVigil, toggleVigilMenu, closeVigilMenu, anyVigilFelled, dragonWorldGroup, dragonArenaGroup, dragonK, fangWorldGroup, fangArenaGroup, fangK, fangShadow, duoWorldGroup, duoArenaGroup, duoAK, duoBK, duoAShadow, duoBShadow, spawnHexPillar, spawnFireWave, updateHexBolts, updateHexPillars, updateHexWaves };
 window.__scene = { scene, camera, renderer, moon, composer, playerShadow, bossShadow, witchK, witchShadow, witchWorldGroup, witchArenaGroup, dragonK, dragonShadow, dragonWorldGroup, dragonArenaGroup, fangK, fangShadow, fangWorldGroup, fangArenaGroup, duoAK, duoBK, duoAShadow, duoBShadow, duoWorldGroup, duoArenaGroup, duoStone, THREE };
 
 
