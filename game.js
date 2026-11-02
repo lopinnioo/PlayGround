@@ -8345,26 +8345,3 @@ loop();
 // expose for automated checks
 window.__game = { G, P, B, W, V, F, D, TUNE, WEAPONS, SPOILS, BOSS_SHARDS, ALL_SPOILS, RARITY, DROP_POOL, DROP_WEIGHTS, SWORD_DROPS, SPOIL_DROPS, FANG_ATK, WEAPON_ORDER, ARENAS, BOSSES, BOSS_ORDER, bossUnlocked, bossShardFor, bossDropsFor, chooseBoss, enterBossArena, beginWitch, resetWitch, beginDragon, resetDragon, beginFang, resetFang, beginDuo, resetDuo, enterArena, touchStone, updateAwakening, touchWitchStone, touchDragonStone, updateWitchAwakening, updateDragon, poseDragon, dragonStrike, dragonDecide, spawnDragonBreath, spawnDragonStorm, updateFang, poseFang, fangStrike, fangDecide, touchFangStone, damageFang, fangEchoes, fangSlashes, spawnFangSkySlash, updateFangSlashes, clearFangSlashes, updateDuo, poseDuo, touchDuoStone, damageDuo, duoTwins, duoAlive, duoSelectTarget, lockTargetInfo, toggleLock, setCreatorMode, bossMusicInfo: () => bossMusic ? { step: bossMusic.step, tempo: bossMusic.tempo, phase2: bossMusic.phase2, state: bossMusic.ac.state, gain: bossMusic.master.gain.value } : null, stonePos, witchStonePos, dragonStonePos, fangStonePos, duoStonePos, restAtBonfire, damageBoss, damageWitch, damageDragon, damageFang, damagePlayer, equipWeapon, toggleInventory, equipSpoils, unequipSpoils, rollDrops, claimDrops, showDropScreen, spawnPillarBarrage, spawnInfernoBarrage, spawnMeteorStorm, spawnFireBoltVolley, clearBossHazards, clearHexHazards, pillars, fireBolts, fireWaves, hexPillars, hexBolts, hexWaves, skeletons, moonBeams, lunarAvatar, summonSkeletons, spawnMoonBeamVolley, damageSkeleton, damageSkeletonsInArc, saveGame, loadGame, eraseSave, applyWorldStyle, switchBossFromVictory, switchBossFromVigil, toggleVigilMenu, closeVigilMenu, anyVigilFelled, dragonWorldGroup, dragonArenaGroup, dragonK, fangWorldGroup, fangArenaGroup, fangK, fangShadow, duoWorldGroup, duoArenaGroup, duoAK, duoBK, duoAShadow, duoBShadow, spawnHexPillar, spawnFireWave, updateHexBolts, updateHexPillars, updateHexWaves };
 window.__scene = { scene, camera, renderer, moon, composer, playerShadow, bossShadow, witchK, witchShadow, witchWorldGroup, witchArenaGroup, dragonK, dragonShadow, dragonWorldGroup, dragonArenaGroup, fangK, fangShadow, fangWorldGroup, fangArenaGroup, duoAK, duoBK, duoAShadow, duoBShadow, duoWorldGroup, duoArenaGroup, duoStone, THREE };
-
-
-if (location.hash === '#bosstest' || location.hash === '#witchtest' || location.hash === '#dragontest' || location.hash === '#fangtest' || location.hash === '#duotest') {
-  if (location.hash === '#witchtest') G.defeated.duncan = true;
-  if (location.hash === '#dragontest') { G.defeated.duncan = true; G.defeated.witch = true; }
-  if (location.hash === '#fangtest') { G.defeated.duncan = true; G.defeated.witch = true; G.defeated.dragon = true; }
-  if (location.hash === '#duotest') { G.defeated.duncan = true; G.defeated.witch = true; G.defeated.dragon = true; G.defeated.fang = true; }
-  setTimeout(() => {
-    const id = location.hash === '#witchtest' ? 'witch' : location.hash === '#dragontest' ? 'dragon' : location.hash === '#fangtest' ? 'fang' : location.hash === '#duotest' ? 'duo' : 'duncan';
-    chooseBoss(id);
-    if (id === 'witch') { touchWitchStone(); G.witchAwakeT = 1.16; updateWitchAwakening(0.01); }
-    else if (id === 'dragon') touchDragonStone();
-    else if (id === 'fang') touchFangStone();
-    else if (id === 'duo') touchDuoStone();
-    else { touchStone(); G.awakeT = 3.05; updateAwakening(0.01); }
-  }, 300);
-  setTimeout(() => {
-    const m = bossMusic;
-    document.body.setAttribute('data-bm', m
-      ? ('ON step=' + m.step + ' tempo=' + m.tempo + ' gain=' + m.master.gain.value.toFixed(3) + ' state=' + m.ac.state + ' ambientNodes=' + musicNodes.length)
-      : 'OFF');
-  }, 6000);
-}
