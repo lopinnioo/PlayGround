@@ -34,7 +34,7 @@ const TUNE = {
   witchHP: 1320, witchDmg: { bolt: 34, wave: 42, curse: 52, blink: 46, storm: 30, beam: 50, skeleton: 18, moonzone: 46 }, witchSpeed: 3.2,
   dragonHP: 4048, dragonDmg: { bite: 61, tail: 71, breath: 50, dive: 73, wing: 42, backdraft: 55 }, dragonSpeed: 3.0,
   fangHP: 2550, fangDmg: { rend: 40, skyrend: 28, skyrendBig: 56, spin: 50, plunge: 66, duskwave: 38, duskfire: 42, afterimage: 44 }, fangSpeed: 4.0,
-  duoHP: 1580, duoDmg: { frostbolt: 30, frostfall: 46, frostwave: 42, cleave: 46, slam: 64, charge: 58 }, duoSpeed: 3.6,
+  duoHP: 1580, duoDmg: { frostbolt: 30, frostfall: 46, frostwave: 42, iceLance: 58, cleave: 46, slam: 64, charge: 58 }, duoSpeed: 3.6,
 };
 
 // ============ AUDIO (procedural, no files) ============
@@ -3337,19 +3337,44 @@ const duoBShadow = blobShadow(3.9, 0.46); duoBShadow.visible = false;
   const maskMat = new THREE.MeshStandardMaterial({ color: 0xdff6ff, metalness: 0.55, roughness: 0.36, emissive: 0x9fe6ff, emissiveIntensity: 0.42 });
   const mask = new THREE.Mesh(new RoundedBoxGeometry(0.24, 0.24, 0.08, 3, 0.04), maskMat);
   mask.position.set(0, 0.05, 0.205); p.head.add(mask);
+  const eyeSlit = new THREE.Mesh(new THREE.BoxGeometry(0.174, 0.026, 0.012), new THREE.MeshBasicMaterial({ color: 0x07141b }));
+  eyeSlit.position.set(0, 0.12, 0.251); p.head.add(eyeSlit);
+  p.maskEyes = [];
+  for (let i = -1; i <= 1; i += 2) {
+    const eye = new THREE.Sprite(new THREE.SpriteMaterial({ map: fireGlowTex, color: 0x8feaff, transparent: true, opacity: 0.82, blending: THREE.AdditiveBlending, depthWrite: false }));
+    eye.position.set(i * 0.052, 0.12, 0.264); eye.scale.set(0.075, 0.045, 1); p.head.add(eye); p.maskEyes.push(eye);
+  }
   for (let i = 0; i < 4; i++) {
     const notch = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.07, 0.02), new THREE.MeshBasicMaterial({ color: 0x080604 }));
     notch.position.set((i - 1.5) * 0.046, 0.15, 0.252); notch.rotation.z = (i - 1.5) * 0.18; p.head.add(notch);
   }
+  const maskRidge = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.12, 5), maskMat);
+  maskRidge.position.set(0, 0.035, 0.26); maskRidge.rotation.x = Math.PI / 2; p.head.add(maskRidge);
+  const brow = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.012, 5, 24, Math.PI), new THREE.MeshStandardMaterial({ color: 0x8feaff, metalness: 0.7, roughness: 0.3, emissive: 0x4abde8, emissiveIntensity: 0.4 }));
+  brow.position.set(0, 0.185, 0.247); p.head.add(brow);
+
+  // A small back-mounted candelabrum makes the frost cantor's silhouette readable.
+  const candelabrum = new THREE.Group(); candelabrum.position.set(0, 0.67, -0.23); p.body.add(candelabrum); p.candelabrum = candelabrum;
+  const frameMat = new THREE.MeshStandardMaterial({ color: 0x7697a5, metalness: 0.82, roughness: 0.34, emissive: 0x24495b, emissiveIntensity: 0.25 });
+  const frame = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.018, 6, 28, Math.PI), frameMat);
+  frame.rotation.z = Math.PI; frame.scale.set(1, 0.78, 1); candelabrum.add(frame);
   const wickMat = new THREE.MeshBasicMaterial({ color: 0xdff6ff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
-  p.candles = [];
+  p.candles = []; p.candleLights = [];
   for (let i = 0; i < 3; i++) {
-    const a = (i - 1) * 0.34;
-    const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.024, 0.34 + i * 0.05, 6), new THREE.MeshStandardMaterial({ color: 0xb8d4df, roughness: 0.8 }));
-    stick.position.set(Math.sin(a) * 0.24, 0.72 + i * 0.04, -0.20 + Math.cos(a) * 0.03); p.body.add(stick);
+    const a = (i - 1) * 0.62;
+    const x = Math.sin(a) * 0.29, z = Math.cos(a) * 0.025;
+    const holder = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.055, 0.055, 9), frameMat);
+    holder.position.set(x, 0.025, z); candelabrum.add(holder);
+    const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.03, 0.34 + (1 - Math.abs(i - 1)) * 0.06, 8), new THREE.MeshStandardMaterial({ color: 0xb8d4df, roughness: 0.8 }));
+    stick.position.set(x, 0.22 + (1 - Math.abs(i - 1)) * 0.03, z); candelabrum.add(stick);
+    const wax = new THREE.Mesh(new THREE.SphereGeometry(0.031, 8, 6), new THREE.MeshStandardMaterial({ color: 0xe7fbff, roughness: 0.9 }));
+    wax.position.set(x + 0.016, stick.position.y - 0.08, z + 0.019); wax.scale.set(0.75, 1.7, 0.8); candelabrum.add(wax);
     const flame = new THREE.Sprite(new THREE.SpriteMaterial({ map: fireGlowTex, color: 0xbfeaff, transparent: true, opacity: 0.82, blending: THREE.AdditiveBlending, depthWrite: false }));
-    flame.scale.setScalar(0.18); flame.position.set(stick.position.x, stick.position.y + 0.22, stick.position.z); p.body.add(flame); p.candles.push(flame);
+    flame.scale.set(0.19, 0.25, 1); flame.position.set(x, stick.position.y + 0.21, z); candelabrum.add(flame); p.candles.push(flame);
+    const light = new THREE.PointLight(0x9fe6ff, 1.7, 2.4, 2); light.position.copy(flame.position); candelabrum.add(light); p.candleLights.push(light);
   }
+  const chestSigil = new THREE.Mesh(new THREE.OctahedronGeometry(0.11, 0), new THREE.MeshStandardMaterial({ color: 0xe7fbff, metalness: 0.25, roughness: 0.18, emissive: 0x56caff, emissiveIntensity: 1.2 }));
+  chestSigil.position.set(0, 0.39, 0.276); chestSigil.scale.set(0.72, 1.25, 0.42); p.torso.add(chestSigil); p.chestSigil = chestSigil;
   p.visor.material.emissive.setHex(0x9fe6ff);
   p.keyLight = new THREE.PointLight(0xbfeaff, 22, 18, 1.9); p.keyLight.position.set(1.2, 3.4, 2.4); duoAK.group.add(p.keyLight);
 }
@@ -3373,7 +3398,7 @@ const duoBShadow = blobShadow(3.9, 0.46); duoBShadow.visible = false;
   bellLip.position.y = -0.37; bellLip.rotation.x = Math.PI / 2; bell.add(bellLip);
   const clapper = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 8), new THREE.MeshStandardMaterial({ color: 0x13242b, metalness: 0.8, roughness: 0.5 }));
   clapper.position.y = -0.40; bell.add(clapper);
-  p.bell = bell; p.bellMat = bellMat;
+  p.bell = bell; p.bellMat = bellMat; p.bellClapper = clapper;
   p.visor.material.emissive.setHex(0x7fd8ff);
   p.keyLight = new THREE.PointLight(0x7fd8ff, 18, 18, 1.9); p.keyLight.position.set(-1.8, 3.0, 2.2); duoBK.group.add(p.keyLight);
 }
@@ -3899,6 +3924,27 @@ function clearHexBolts() {
 }
 
 const hexPillars = [];
+const launchedIcePillars = [];
+const launchedIceAimLine = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.055, 0.055, 1, 8),
+  new THREE.MeshBasicMaterial({ color: 0xbfeaff, transparent: true, opacity: 0.72, blending: THREE.AdditiveBlending, depthWrite: false })
+);
+launchedIceAimLine.visible = false;
+scene.add(launchedIceAimLine);
+const iceAimUp = new THREE.Vector3(0, 1, 0);
+function updateLaunchedIceAimLine(T) {
+  const start = new THREE.Vector3(T.pos.x, 0.08, T.pos.z);
+  const end = new THREE.Vector3(P.pos.x, 0.08, P.pos.z);
+  const dir = end.sub(start);
+  const length = dir.length();
+  if (length < 0.05) { launchedIceAimLine.visible = false; return; }
+  dir.normalize();
+  launchedIceAimLine.visible = true;
+  launchedIceAimLine.position.copy(start).addScaledVector(dir, length * 0.5);
+  launchedIceAimLine.quaternion.setFromUnitVectors(iceAimUp, dir);
+  launchedIceAimLine.scale.set(1, length, 1);
+}
+function hideLaunchedIceAimLine() { launchedIceAimLine.visible = false; }
 function spawnHexPillar(x, z, delay = 1.2, radius = 2.0, dmg = 44, mult = 1, lunar = false, theme = 'witch') {
   const isFang = theme === 'fang';
   const isFrost = theme === 'frost';
@@ -3962,6 +4008,53 @@ function clearHexPillars() {
     const p = hexPillars[i]; scene.remove(p.grp); p.ringMat.dispose(); p.fillMat.dispose(); hexPillars.splice(i, 1);
   }
 }
+function spawnLaunchedIcePillar(origin, target, dmg) {
+  const dir = new THREE.Vector3(target.x - origin.x, 0, target.z - origin.z);
+  if (dir.lengthSq() < 0.001) dir.set(0, 0, 1); else dir.normalize();
+  const grp = new THREE.Group(); grp.position.copy(origin);
+  grp.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir);
+  const iceMat = new THREE.MeshStandardMaterial({ color: 0xc9f3ff, metalness: 0.48, roughness: 0.2, emissive: 0x55caff, emissiveIntensity: 1.1, transparent: true, opacity: 0.94 });
+  const coreMat = new THREE.MeshBasicMaterial({ color: 0xf0fcff, transparent: true, opacity: 0.72, blending: THREE.AdditiveBlending, depthWrite: false });
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.34, 3.8, 8, 1), iceMat);
+  shaft.rotation.z = -Math.PI / 2; shaft.position.x = -0.15; shaft.castShadow = true; grp.add(shaft);
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.25, 8), iceMat);
+  tip.rotation.z = -Math.PI / 2; tip.position.x = 2.35; tip.castShadow = true; grp.add(tip);
+  const core = new THREE.Mesh(new THREE.ConeGeometry(0.19, 2.6, 6), coreMat);
+  core.rotation.z = -Math.PI / 2; core.position.x = 0.42; grp.add(core);
+  for (let i = 0; i < 3; i++) {
+    const shard = new THREE.Mesh(new THREE.ConeGeometry(0.16, 1.25, 5), iceMat);
+    shard.rotation.z = -Math.PI / 2; shard.rotation.x = (i - 1) * 0.52; shard.position.set(-0.25 - i * 0.58, (i - 1) * 0.2, 0.14); grp.add(shard);
+  }
+  scene.add(grp);
+  launchedIcePillars.push({ grp, dir, speed: 20, dmg, life: Math.min(1.7, dist2D(origin, target) / 20 + 0.32), age: 0, iceMat, coreMat });
+  sfx.cast();
+}
+function updateLaunchedIcePillars(dt) {
+  for (let i = launchedIcePillars.length - 1; i >= 0; i--) {
+    const p = launchedIcePillars[i];
+    p.age += dt; p.life -= dt;
+    p.grp.position.addScaledVector(p.dir, p.speed * dt);
+    p.grp.position.y = 2.05 + Math.sin(p.age * 14) * 0.12;
+    p.grp.rotation.x += dt * 1.5;
+    if (Math.random() < 0.8) spawnSparks(p.grp.position, 1, 0xbfeaff, 2.4);
+    const hit = P.state !== 'dead' && Math.hypot(P.pos.x - p.grp.position.x, P.pos.z - p.grp.position.z) < 1.05;
+    const dx = p.grp.position.x - ARENA.center.x, dz = p.grp.position.z - ARENA.center.z;
+    if (hit) {
+      damagePlayer(p.dmg, p.grp.position, 'frost');
+      spawnRing(new THREE.Vector3(p.grp.position.x, 0, p.grp.position.z), 0xbfeaff, 4.2);
+      spawnSparks(p.grp.position, 22, 0xdff6ff, 6);
+    }
+    if (hit || p.life <= 0 || Math.hypot(dx, dz) > ARENA.radius + 3) {
+      if (!hit && p.age > 0.25) spawnHexPillar(p.grp.position.x, p.grp.position.z, 0.5, 1.55, Math.round(p.dmg * 0.55), 1, false, 'frost');
+      scene.remove(p.grp); p.iceMat.dispose(); p.coreMat.dispose(); launchedIcePillars.splice(i, 1);
+    }
+  }
+}
+function clearLaunchedIcePillars() {
+  for (let i = launchedIcePillars.length - 1; i >= 0; i--) {
+    const p = launchedIcePillars[i]; scene.remove(p.grp); p.iceMat.dispose(); p.coreMat.dispose(); launchedIcePillars.splice(i, 1);
+  }
+}
 
 const hexWaves = [];
 const hexWaveGeo = new THREE.RingGeometry(0.93, 1.0, 64);
@@ -4001,6 +4094,7 @@ const skeletonRibGeo = new THREE.TorusGeometry(0.2, 0.022, 4, 14, Math.PI * 1.55
 const skeletonJawGeo = new THREE.BoxGeometry(0.22, 0.07, 0.14);
 const skeletonSwordGeo = new THREE.BoxGeometry(0.055, 0.7, 0.015);
 const skeletons = [];
+let nextSkeletonLockId = 1;
 
 function buildSkeleton() {
   const group = new THREE.Group();
@@ -4056,6 +4150,7 @@ function buildSkeleton() {
 function spawnSkeleton(x, z, mult = 1) {
   const parts = buildSkeleton();
   const s = {
+    lockId: nextSkeletonLockId++,
     group: parts.group, parts, hp: 55 + G.ng * 10, maxHP: 55 + G.ng * 10,
     dmg: Math.round((TUNE.witchDmg.skeleton + G.ng * 3) * mult),
     speed: 2.55 + Math.random() * 0.35, state: 'rise', t: 0, walk: Math.random() * 6.28,
@@ -4394,7 +4489,7 @@ function updateWitchLunar(dt) {
 }
 
 function clearHexHazards() {
-  clearHexBolts(); clearHexPillars(); clearHexWaves();
+  clearHexBolts(); clearHexPillars(); clearHexWaves(); clearLaunchedIcePillars(); hideLaunchedIceAimLine();
   clearMoonBeams(); clearSkeletons(); clearLunarFX();
 }
 
@@ -4404,7 +4499,7 @@ const G = {
   bossId: 'duncan',
   inArena: false, bossActive: false, bossDead: false,
   defeated: { duncan: false, witch: false, dragon: false, fang: false, duo: false },
-  locked: false, ng: 0, fightTime: 0, hitstop: 0, paused: false,
+  locked: false, lockTargetKey: null, ng: 0, fightTime: 0, hitstop: 0, paused: false,
   camYaw: 0, camPitch: 0.22, camDist: 6.5,
   shake: 0,
   awakening: false, awakeT: 0, awakeBurst: false, bossRevealed: false, bossRevealY: 0,
@@ -4671,6 +4766,7 @@ const F = {
 const DUO_ATK = {
   frostbolt: { wind: 0.64, active: 0.20, recover: 0.78, range: DUO_R, arc: Math.PI * 2 },
   frostfall: { wind: 1.06, active: 0.24, recover: 1.02, range: DUO_R, arc: Math.PI * 2 },
+  iceLance: { wind: 1.22, active: 0.22, recover: 1.12, range: DUO_R, arc: Math.PI * 2 },
   frostwave: { wind: 0.94, active: 0.30, recover: 0.96, range: DUO_R, arc: Math.PI * 2 },
   cleave: { wind: 0.60, active: 0.30, recover: 0.88, range: 4.9, arc: 1.5 },
   slam: { wind: 0.90, active: 0.32, recover: 1.05, range: 4.6, arc: 2.7 },
@@ -4751,7 +4847,7 @@ function duoStartAttack(T) {
   if (D.attackOwner >= 0 || D.attackCd > 0 || D.requiemBy >= 0) return false;
   const dist = dist2D(T.pos, P.pos);
   let opts;
-  if (T.id === 0) opts = dist > 7.2 ? ['frostbolt', 'frostfall', 'frostwave'] : ['frostwave', 'frostfall', 'frostbolt'];
+  if (T.id === 0) opts = dist > 7.2 ? ['frostbolt', 'frostfall', 'iceLance', 'iceLance'] : ['frostwave', 'frostfall', 'iceLance'];
   else opts = dist < 5.4 ? ['cleave', 'slam', 'charge'] : ['charge'];
   if (opts.length > 1 && T.lastAttack) {
     const filtered = opts.filter(k => k !== T.lastAttack);
@@ -4760,7 +4856,8 @@ function duoStartAttack(T) {
   const pick = opts[Math.random() * opts.length | 0] || opts[0];
   T.attackKind = pick; T.state = 'windup'; T.t = 0; T.hasHit = false; T.lastAttack = pick;
   D.attackOwner = T.id; D.attackCd = 0; D.lastAttack = pick;
-  if (pick === 'frostfall' || pick === 'frostwave' || pick === 'slam' || pick === 'charge') telegraphEl.classList.remove('hidden');
+  if (pick === 'frostfall' || pick === 'frostwave' || pick === 'iceLance' || pick === 'slam' || pick === 'charge') telegraphEl.classList.remove('hidden');
+  if (pick === 'iceLance') showSub('VESPER GATHERS A LAUNCHED ICE PILLAR — DODGE THE LINE');
   if (T.id === 0) sfx.cast(); else sfx.swing();
   return true;
 }
@@ -4769,7 +4866,13 @@ function duoRelease(T) {
   const mult = 1 + G.ng * 0.25;
   const kind = T.attackKind;
   telegraphEl.classList.add('hidden');
-  if (kind === 'frostbolt') {
+  hideLaunchedIceAimLine();
+  if (kind === 'iceLance') {
+    T.hasHit = true;
+    hideLaunchedIceAimLine();
+    spawnLaunchedIcePillar(new THREE.Vector3(T.pos.x, 2.0, T.pos.z), new THREE.Vector3(P.pos.x, 0, P.pos.z), Math.round(TUNE.duoDmg.iceLance * mult));
+    showSub('THE ICE PILLAR IS LOOSE — DODGE');
+  } else if (kind === 'frostbolt') {
     T.hasHit = true;
     spawnFrostBoltVolley(new THREE.Vector3(T.pos.x, 2.0, T.pos.z), 4, 0.16, 11.5, Math.round(TUNE.duoDmg.frostbolt * mult));
     showSub('FROST SEEKS YOU — KEEP MOVING');
@@ -4844,6 +4947,7 @@ function updateDuoTwin(T, dt) {
   }
   if (T.state === 'windup') {
     T.yaw += angDiff(toP, T.yaw) * Math.min(1, 2.0 * dt);
+    if (T.attackKind === 'iceLance') updateLaunchedIceAimLine(T);
     const s = DUO_ATK[T.attackKind] || (T.id === 0 ? DUO_ATK.frostbolt : DUO_ATK.cleave);
     if (T.t >= s.wind) duoRelease(T);
     return;
@@ -4865,22 +4969,22 @@ function updateDuoTwin(T, dt) {
     if (T.t >= s.recover) {
       if (D.attackOwner === T.id) { D.attackOwner = -1; D.attackCd = 0.34; }
       T.state = 'idle'; T.t = 0;
-      T.decideCd = 0.42 + Math.random() * 0.62;
-      if (D.phase2) T.decideCd *= 0.78;
+      T.decideCd = 0.78 + Math.random() * 0.62;
+      if (D.phase2) T.decideCd *= 0.86;
     }
     return;
   }
   if (T.state === 'idle' || T.state === 'advance') {
     T.yaw += angDiff(toP, T.yaw) * Math.min(1, 2.1 * dt);
-    const desired = T.id === 0 ? 9.0 : 3.5;
+    const desired = T.id === 0 ? 7.4 : 3.2;
     const d = Math.max(0.001, dist2D(T.pos, P.pos));
-    const speed = TUNE.duoSpeed * (T.id === 0 ? 0.78 : 1.08) * (D.phase2 ? 1.12 : 1);
+    const speed = TUNE.duoSpeed * (T.id === 0 ? 0.68 : 0.92) * (D.phase2 ? 1.08 : 1);
     if (d > desired + 0.35) {
       T.pos.x += Math.sin(toP) * speed * dt;
       T.pos.z += Math.cos(toP) * speed * dt;
-    } else if (d < desired - 0.55) {
-      T.pos.x -= Math.sin(toP) * speed * 0.8 * dt;
-      T.pos.z -= Math.cos(toP) * speed * 0.8 * dt;
+    } else if (d < desired - 0.9) {
+      T.pos.x -= Math.sin(toP) * speed * 0.38 * dt;
+      T.pos.z -= Math.cos(toP) * speed * 0.38 * dt;
     } else {
       const strafe = Math.sin(D.t * 0.7 + T.id * 2.1) * (D.phase2 ? 0.55 : 0.32);
       T.pos.x += Math.cos(toP) * strafe * dt;
@@ -5054,8 +5158,19 @@ function poseDuo(dt) {
       p.armR.el.rotation.x = -0.35; p.armL.el.rotation.x = -0.6;
     }
     if (K.parts.halo) { K.parts.halo.rotation.z = time * 0.25; K.parts.haloMat.opacity = (T.state === 'requiem' ? 0.9 : 0.38) + Math.sin(time * 2.4 + T.id) * 0.1; }
-    if (K.parts.candles) for (let i = 0; i < K.parts.candles.length; i++) K.parts.candles[i].material.opacity = 0.62 + Math.sin(time * 7 + i * 2) * 0.18;
-    if (K.parts.bell) K.parts.bell.rotation.x = Math.sin(time * 1.8 + T.id) * 0.10 + (T.state === 'windup' ? -0.5 : 0);
+    if (K.parts.candles) for (let i = 0; i < K.parts.candles.length; i++) {
+      const flicker = Math.sin(time * 7 + i * 2) * 0.18 + Math.sin(time * 13 + i * 4.1) * 0.07;
+      K.parts.candles[i].material.opacity = 0.68 + flicker;
+      K.parts.candles[i].scale.set(0.19 * (1 + flicker * 0.18), 0.25 * (1 + flicker * 0.32), 1);
+      if (K.parts.candleLights && K.parts.candleLights[i]) K.parts.candleLights[i].intensity = 1.7 + flicker * 2.2;
+    }
+    if (K.parts.bell) {
+      const ring = Math.sin(time * 1.8 + T.id) * 0.10 + (T.state === 'windup' ? -0.5 : 0);
+      K.parts.bell.rotation.x = ring;
+      if (K.parts.bellClapper) K.parts.bellClapper.position.x = Math.sin(time * 5 + T.id) * 0.045 - ring * 0.08;
+    }
+    if (K.parts.maskEyes) for (let i = 0; i < K.parts.maskEyes.length; i++) K.parts.maskEyes[i].material.opacity = 0.68 + Math.sin(time * 2.6 + i * 0.7) * 0.16;
+    if (K.parts.chestSigil) K.parts.chestSigil.material.emissiveIntensity = 0.9 + Math.sin(time * 2.2) * 0.25;
     if (K.parts.swordGlow) K.parts.swordGlow.material.opacity = T.state === 'windup' ? 0.5 + Math.sin(time * 12) * 0.2 : 0.06;
   }
 }
@@ -5262,46 +5377,64 @@ function inArc(from, facingYaw, to, range, arc) {
   const want = Math.atan2(to.x - from.x, to.z - from.z);
   return Math.abs(angDiff(want, facingYaw)) < arc;
 }
-function lockTargetInfo() {
-  if (G.mode !== 'play') return null;
-  let best = null, bestD = Infinity;
-  const consider = (pos, aimY, scale, group, kind) => {
+function lockTargetCandidates() {
+  if (G.mode !== 'play') return [];
+  const candidates = [];
+  const consider = (key, pos, aimY, scale, group, kind) => {
     if (!group || !group.visible) return;
-    const d = dist2D(P.pos, pos);
-    if (d < bestD) { bestD = d; best = { pos, aimY, scale, group, kind }; }
+    candidates.push({ key, pos, aimY, scale, group, kind, distance: dist2D(P.pos, pos) });
   };
   if (G.bossActive) {
     if (G.bossId === 'duo') {
       for (const t of duoTwins) {
-        if (duoAlive(t)) consider(t.pos, t.id === 0 ? 2.05 : 2.45, t.k.group.scale.x / t.base, t.k.group, 'duo');
+        if (duoAlive(t)) consider(`duo:${t.id}`, t.pos, t.id === 0 ? 2.05 : 2.45, t.k.group.scale.x / t.base, t.k.group, 'duo');
       }
     } else {
       const t = activeBoss();
-      if (t.state !== 'dead' && t.state !== 'dormant') consider(t.pos, activeBossAimY(), activeBossScale(), activeBossGroup(), G.bossId);
+      if (t.state !== 'dead' && t.state !== 'dormant') consider(`boss:${G.bossId}`, t.pos, activeBossAimY(), activeBossScale(), activeBossGroup(), G.bossId);
     }
   }
   for (const s of skeletons) {
     if (s.state === 'dying') continue;
-    consider(s.group.position, 1.2, 0.5, s.group, 'skeleton');
+    consider(`skeleton:${s.lockId}`, s.group.position, 1.2, 0.5, s.group, 'skeleton');
   }
-  return best;
+  candidates.sort((a, b) => a.distance - b.distance || a.key.localeCompare(b.key));
+  return candidates;
+}
+function lockTargetInfo() {
+  const candidates = lockTargetCandidates();
+  if (!candidates.length) return null;
+  if (!G.locked) return candidates[0];
+  const selected = candidates.find(target => target.key === G.lockTargetKey);
+  if (selected) return selected;
+  G.lockTargetKey = candidates[0].key;
+  return candidates[0];
 }
 function lockTargetValid() { return !!lockTargetInfo(); }
-function setLock(on) {
-  G.locked = !!on && lockTargetValid();
+function setLock(on, key = null) {
+  const candidates = lockTargetCandidates();
+  G.locked = !!on && candidates.length > 0;
+  if (G.locked) G.lockTargetKey = (key && candidates.some(target => target.key === key) ? key : candidates[0].key);
+  else G.lockTargetKey = null;
   lockHint.classList.toggle('hidden', !G.locked);
 }
 function toggleLock() {
   if (G.mode !== 'play' || G.paused) return;
-  if (G.locked) {
+  const candidates = lockTargetCandidates();
+  if (!candidates.length) {
     setLock(false);
-    showSub('LOCK-ON RELEASED');
-  } else if (lockTargetValid()) {
-    setLock(true);
-    showSub('AUTO-LOCK ON');
-  } else {
     showSub('NO ENEMY TO LOCK ONTO');
+    return;
   }
+  if (!G.locked) {
+    setLock(true, candidates[0].key);
+    showSub('LOCKED ON — Q CYCLES TARGETS');
+    return;
+  }
+  const currentIndex = candidates.findIndex(target => target.key === G.lockTargetKey);
+  const next = candidates[(currentIndex + 1 + candidates.length) % candidates.length];
+  setLock(true, next.key);
+  showSub(candidates.length > 1 ? `TARGET: ${next.kind === 'duo' ? (next.key === 'duo:0' ? 'VESPER' : 'MORROW') : next.kind.toUpperCase()}` : 'TARGET HELD');
 }
 function lockOnActive() { return G.locked && !G.paused && lockTargetValid(); }
 function bossFacingYaw() {
@@ -6100,9 +6233,9 @@ function updateWitch(dt) {
       W.yaw += angDiff(toP, W.yaw) * Math.min(1, turn * dt);
       const speed = TUNE.witchSpeed * (W.phase2 ? 1.25 : 1) * (1 + G.ng * 0.08);
       let mx = 0, mz = 0;
-      if (d < 6.5) { mx = (W.pos.x - P.pos.x) / Math.max(d, 0.001); mz = (W.pos.z - P.pos.z) / Math.max(d, 0.001); }
-      else if (d > 11.5) { mx = (P.pos.x - W.pos.x) / Math.max(d, 0.001); mz = (P.pos.z - W.pos.z) / Math.max(d, 0.001); }
-      else { mx = Math.cos(W.t * 0.7) * 0.5; mz = Math.sin(W.t * 0.7) * 0.5; }
+      if (d < 4.2) { mx = (W.pos.x - P.pos.x) / Math.max(d, 0.001) * 0.38; mz = (W.pos.z - P.pos.z) / Math.max(d, 0.001) * 0.38; }
+      else if (d > 10.5) { mx = (P.pos.x - W.pos.x) / Math.max(d, 0.001) * 0.6; mz = (P.pos.z - W.pos.z) / Math.max(d, 0.001) * 0.6; }
+      else { mx = Math.cos(W.t * 0.55) * 0.28; mz = Math.sin(W.t * 0.55) * 0.28; }
       W.pos.x += mx * speed * dt; W.pos.z += mz * speed * dt;
       clampToActiveArena(W.pos, 1.6);
       const cd = Math.hypot(W.pos.x - WITCH_CENTER.x, W.pos.z - WITCH_CENTER.z);
@@ -6133,7 +6266,7 @@ function updateWitch(dt) {
           telegraphEl.classList.add('hidden');
           showSub('THE HEX FALTERS — SHE MUST RECOVER');
         } else {
-          W.state = 'idle'; W.decideCd = 0.95 + Math.random() * 0.75;
+          W.state = 'idle'; W.decideCd = 1.35 + Math.random() * 0.75;
         }
       }
       break;
@@ -8291,7 +8424,7 @@ function loop() {
     if (G.bossId === 'witch') { updateHexBolts(dt); updateHexPillars(dt); updateHexWaves(dt); updateMoonBeams(dt); updateSkeletons(dt); }
     else if (G.bossId === 'dragon') { updatePillars(dt); updateFireWaves(dt); }
     else if (G.bossId === 'fang') { updatePillars(dt); updateHexPillars(dt); updateFireWaves(dt); }
-    else if (G.bossId === 'duo') { updateHexBolts(dt); updateHexPillars(dt); updateHexWaves(dt); }
+    else if (G.bossId === 'duo') { updateHexBolts(dt); updateHexPillars(dt); updateHexWaves(dt); updateLaunchedIcePillars(dt); }
     else { updatePillars(dt); updateFireBolts(dt); updateFireWaves(dt); }
     if (G.bossId === 'duncan') { updateInfernoOrbVisual(dt); updateInfernoMark(dt); updateBossFireAura(dt); }
   }
